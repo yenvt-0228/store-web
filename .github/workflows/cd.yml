@@ -1,0 +1,93 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write 
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false 
+
+jobs:
+  image:
+    name: Build & push image
+    runs-on: ubuntu-latest
+
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Xác định commit cần đóng gói
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            SHA="${{ github.event.workflow_run.head_sha }}"
+          else
+            SHA="${{ github.sha }}"
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "short=$(echo "$SHA" | cut -c1-7)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.sha }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Đăng nhập GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tính tên và tag cho image
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=sha-${{ steps.target.outputs.short }}
+            type=raw,value=latest,enable=${{ github.event_name == 'workflow_run' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build và push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Ghi kết quả ra trang tổng kết
+        run: |
+          {
+            echo "### Image đã đẩy lên registry"
+            echo ""
+            echo "Commit: \`${{ steps.target.outputs.short }}\`"
+            echo ""
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo ""
+            echo "Chạy thử:"
+            echo '```bash'
+            echo "docker run --rm -p 3000:3000 \\"
+            echo "  -e DATABASE_URL='postgresql://...' \\"
+            echo "  -e JWT_SECRET='...' \\"
+            echo "  ghcr.io/${{ github.repository }}:sha-${{ steps.target.outputs.short }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
