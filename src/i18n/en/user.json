@@ -1,0 +1,6 @@
+{
+  "NOT_FOUND": "User not found",
+  "WRONG_OLD_PASSWORD": "Current password is incorrect",
+  "SAME_PASSWORD": "New password must be different from the current password",
+  "PASSWORD_CHANGED": "Password changed successfully. Please log in again"
+}

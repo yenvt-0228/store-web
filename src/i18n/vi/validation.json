@@ -1,0 +1,15 @@
+{
+  "IS_EMAIL": "{property} phải là email hợp lệ",
+  "IS_STRING": "{property} phải là chuỗi",
+  "IS_NOT_EMPTY": "{property} không được để trống",
+  "MIN_LENGTH": "{property} phải có ít nhất {constraints.0} ký tự",
+  "MAX_LENGTH": "{property} không được dài hơn {constraints.0} ký tự",
+  "IS_INT": "{property} phải là số nguyên",
+  "MIN": "{property} không được nhỏ hơn {constraints.0}",
+  "MAX": "{property} không được lớn hơn {constraints.0}",
+  "MATCH": "{property} phải khớp với {constraints.0}",
+  "IS_ENUM": "{property} có giá trị không hợp lệ",
+  "IS_URL": "{property} phải là URL hợp lệ",
+  "IS_PHONE": "{property} phải là số điện thoại hợp lệ",
+  "IS_UUID": "{property} phải là UUID hợp lệ"
+}

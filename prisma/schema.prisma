@@ -1,0 +1,115 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+  runtime      = "nodejs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("user_status")
+}
+
+model User {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  name     String  @db.VarChar(255)
+  email    String  @unique @db.VarChar(255) 
+  password String  @db.VarChar(255) // luôn là chuỗi bcrypt
+  phone    String? @db.VarChar(20)
+  address  String? @db.VarChar(255)
+  avatar   String? @db.VarChar(500)
+
+  status UserStatus @default(ACTIVE)
+  isVerified Boolean @default(false) @map("is_verified")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  roles                   UserRole[]
+  refreshTokens           RefreshToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
+
+  @@map("users")
+}
+
+model Role {
+  id          String  @id @default(uuid(7)) @db.Uuid
+  name        String  @unique @db.VarChar(50) // ADMIN | USER (xem RoleName)
+  description String? @db.VarChar(255)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users UserRole[]
+
+  @@map("roles")
+}
+
+// Bảng nối user <-> role (N-N)
+model UserRole {
+  userId String @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  roleId String @map("role_id") @db.Uuid
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([userId, roleId]) // khóa chính gộp -> không thể gán trùng 1 role cho 1 user
+  @@map("user_roles")
+}
+
+model RefreshToken {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token String @unique // sha256(refresh token)
+
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model EmailVerificationToken {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token String @unique @db.VarChar(255) // sha256(activation token)
+
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at") // đã dùng rồi thì không kích hoạt lại được
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token String @unique @db.VarChar(255) // sha256(reset token)
+
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}

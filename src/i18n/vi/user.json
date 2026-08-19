@@ -1,0 +1,6 @@
+{
+  "NOT_FOUND": "Không tìm thấy người dùng",
+  "WRONG_OLD_PASSWORD": "Mật khẩu hiện tại không đúng",
+  "SAME_PASSWORD": "Mật khẩu mới phải khác mật khẩu hiện tại",
+  "PASSWORD_CHANGED": "Đổi mật khẩu thành công. Vui lòng đăng nhập lại"
+}
