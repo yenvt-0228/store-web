@@ -2,6 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OnEvent } from '@nestjs/event-emitter';
 import { MailEvent } from '../common/events/mail.event';
+import type {
+  OrderConfirmedEvent,
+  OrderCreatedEvent,
+  OrderRejectedEvent,
+} from '../common/events/order.event';
+import { OrderEvent } from '../common/events/order.event';
 
 import type {
   PasswordChangedEvent,
@@ -11,9 +17,12 @@ import type {
 import { MailDispatcher } from './mail.dispatcher';
 import {
   activationMail,
+  orderConfirmedMail,
+  orderCreatedMail,
+  orderRejectedMail,
   passwordChangedMail,
   resetPasswordMail,
-} from './mail.template';
+} from './mail.renderer';
 
 @Injectable()
 export class MailListener {
@@ -55,6 +64,32 @@ export class MailListener {
   async onPasswordChanged(event: PasswordChangedEvent): Promise<void> {
     await this.dispatcher.dispatch(
       passwordChangedMail(event.email, event.name),
+    );
+  }
+
+  @OnEvent(OrderEvent.CREATED)
+  async onOrderCreated(event: OrderCreatedEvent): Promise<void> {
+    await this.dispatcher.dispatch(
+      orderCreatedMail(
+        event.email,
+        event.name,
+        event.orderCode,
+        event.totalAmount,
+      ),
+    );
+  }
+
+  @OnEvent(OrderEvent.CONFIRMED)
+  async onOrderConfirmed(event: OrderConfirmedEvent): Promise<void> {
+    await this.dispatcher.dispatch(
+      orderConfirmedMail(event.email, event.name, event.orderCode),
+    );
+  }
+
+  @OnEvent(OrderEvent.REJECTED)
+  async onOrderRejected(event: OrderRejectedEvent): Promise<void> {
+    await this.dispatcher.dispatch(
+      orderRejectedMail(event.email, event.name, event.orderCode, event.reason),
     );
   }
 }

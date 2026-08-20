@@ -10,10 +10,12 @@ import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import { RoleName } from '../src/common/constants/role.constant';
 import { MailEvent } from '../src/common/events/mail.event';
+import { OrderEvent } from '../src/common/events/order.event';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
 import { ValidationExceptionFilter } from '../src/common/filters/validation-exception.filter';
-import { UserStatus } from '../src/generated/prisma/enums';
+import { ProductStatus, UserStatus } from '../src/generated/prisma/enums';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { RedisService } from '../src/redis/redis.service';
 
 export interface UserPayload {
   id: string;
@@ -74,8 +76,11 @@ export async function createTestApp(): Promise<INestApplication> {
 export async function resetDb(app: INestApplication) {
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "refresh_tokens","email_verification_tokens","password_reset_tokens","user_roles","roles","users" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "payments","order_items","orders","products","categories","refresh_tokens","email_verification_tokens","password_reset_tokens","user_roles","roles","users" RESTART IDENTITY CASCADE',
   );
+  const redis = app.get(RedisService);
+  await redis.ensureConnected();
+  await redis.client.flushdb();
 }
 
 export function db(app: INestApplication): PrismaService {
@@ -225,13 +230,17 @@ export interface CapturedMail {
   email: string;
   name: string;
   token?: string;
+  orderCode?: string;
+  reason?: string;
 }
 
 export function captureMails(app: INestApplication): CapturedMail[] {
   const mails: CapturedMail[] = [];
   const emitter = app.get(EventEmitter2);
-
-  for (const event of Object.values(MailEvent)) {
+  for (const event of [
+    ...Object.values(MailEvent),
+    ...Object.values(OrderEvent),
+  ]) {
     emitter.on(event, (payload: Omit<CapturedMail, 'event'>) => {
       mails.push({ event, ...payload });
     });
@@ -239,3 +248,106 @@ export function captureMails(app: INestApplication): CapturedMail[] {
 
   return mails;
 }
+
+export async function seedCategory(app: INestApplication, name = 'Đồ điện tử') {
+  return db(app).category.create({ data: { name } });
+}
+
+export interface SeededProduct {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+}
+
+export async function seedProduct(
+  app: INestApplication,
+  overrides: {
+    categoryId?: string;
+    name?: string;
+    price?: number;
+    quantity?: number;
+    status?: ProductStatus;
+    isFeatured?: boolean;
+    deletedAt?: Date | null;
+  } = {},
+): Promise<SeededProduct> {
+  const categoryId =
+    overrides.categoryId ??
+    (await seedCategory(app, `Danh mục ${Date.now()}`)).id;
+
+  const product = await db(app).product.create({
+    data: {
+      categoryId,
+      name: overrides.name ?? 'Sản phẩm test',
+      price: overrides.price ?? 100_000,
+      quantity: overrides.quantity ?? 10,
+      status: overrides.status ?? ProductStatus.ACTIVE,
+      isFeatured: overrides.isFeatured ?? false,
+      deletedAt: overrides.deletedAt ?? null,
+    },
+  });
+
+  return {
+    id: product.id,
+    name: product.name,
+    price: Number(product.price),
+    quantity: product.quantity,
+  };
+}
+
+export async function stockOf(
+  app: INestApplication,
+  productId: string,
+): Promise<number> {
+  const product = await db(app).product.findUniqueOrThrow({
+    where: { id: productId },
+  });
+  return product.quantity;
+}
+
+export const shippingInfo = {
+  shippingName: 'Nguyen Van A',
+  shippingPhone: '0912345678',
+  shippingAddress: 'So 1, Ha Noi',
+};
+
+export interface OrderPayload {
+  id: string;
+  orderCode: string;
+  status: string;
+  paymentStatus: string;
+  paymentMethod: string;
+  totalAmount: number;
+  items: {
+    productId: string;
+    productName: string;
+    productPrice: number;
+    quantity: number;
+    subtotal: number;
+  }[];
+  cancelReason: string | null;
+  rejectReason: string | null;
+}
+
+export interface CartPayload {
+  items: {
+    productId: string;
+    name: string;
+    price: number;
+    quantity: number;
+    subtotal: number;
+    stock: number;
+    available: boolean;
+  }[];
+  totalItems: number;
+  totalQuantity: number;
+  totalAmount: number;
+}
+
+export type CartBody = { cart: CartPayload };
+export type OrderBody = { order: OrderPayload };
+export type OrderListBody = {
+  data: OrderPayload[];
+  meta: { total: number; page: number; limit: number; totalPages: number };
+};

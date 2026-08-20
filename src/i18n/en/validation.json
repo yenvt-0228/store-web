@@ -11,5 +11,8 @@
   "IS_ENUM": "{property} has an invalid value",
   "IS_URL": "{property} must be a valid URL",
   "IS_PHONE": "{property} must be a valid phone number",
-  "IS_UUID": "{property} must be a valid UUID"
+  "IS_UUID": "{property} must be a valid UUID",
+  "IS_NUMBER": "{property} must be a number",
+  "IS_BOOLEAN": "{property} must be true or false",
+  "IS_ARRAY": "{property} must be an array"
 }

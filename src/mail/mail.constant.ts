@@ -1,3 +1,5 @@
+export const SHOP_NAME = 'Store Web';
+
 export const MAIL_QUEUE = 'mail';
 
 export const MailJob = {
