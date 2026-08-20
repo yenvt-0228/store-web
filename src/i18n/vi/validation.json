@@ -11,5 +11,8 @@
   "IS_ENUM": "{property} có giá trị không hợp lệ",
   "IS_URL": "{property} phải là URL hợp lệ",
   "IS_PHONE": "{property} phải là số điện thoại hợp lệ",
-  "IS_UUID": "{property} phải là UUID hợp lệ"
+  "IS_UUID": "{property} phải là UUID hợp lệ",
+  "IS_NUMBER": "{property} phải là số",
+  "IS_BOOLEAN": "{property} phải là true hoặc false",
+  "IS_ARRAY": "{property} phải là một mảng"
 }
