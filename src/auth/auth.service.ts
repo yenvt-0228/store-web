@@ -33,6 +33,7 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { TokenService } from './token.service';
+import { toLocale } from '../common/constants/locale.constant';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -88,6 +89,7 @@ export class AuthService {
       email: user.email,
       name: user.name,
       token: rawToken,
+      locale: toLocale(user.locale),
     } satisfies UserRegisteredEvent);
 
     return {
@@ -167,6 +169,7 @@ export class AuthService {
         email: user.email,
         name: user.name,
         token: rawToken,
+        locale: toLocale(user.locale),
       } satisfies PasswordResetRequestedEvent);
     }
 
@@ -191,6 +194,7 @@ export class AuthService {
     this.events.emit(MailEvent.PASSWORD_CHANGED, {
       email: user.email,
       name: user.name,
+      locale: toLocale(user.locale),
     });
 
     return { message: this.i18n.t('auth.PASSWORD_RESET') };

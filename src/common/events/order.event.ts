@@ -1,3 +1,5 @@
+import type { Locale } from '../constants/locale.constant';
+
 export const OrderEvent = {
   CREATED: 'order.created',
   CONFIRMED: 'order.confirmed',
@@ -9,12 +11,14 @@ export interface OrderCreatedEvent {
   name: string;
   orderCode: string;
   totalAmount: number;
+  locale: Locale;
 }
 
 export interface OrderConfirmedEvent {
   email: string;
   name: string;
   orderCode: string;
+  locale: Locale;
 }
 
 export interface OrderRejectedEvent {
@@ -22,4 +26,5 @@ export interface OrderRejectedEvent {
   name: string;
   orderCode: string;
   reason: string;
+  locale: Locale;
 }

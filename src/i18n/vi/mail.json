@@ -1,0 +1,28 @@
+{
+  "GREETING": "Xin chào <b>{name}</b>,",
+  "FOOTER_AUTO": "Email này được gửi tự động, vui lòng không trả lời.",
+  "MONEY": "{amount}đ",
+
+  "ACTIVATION_SUBJECT": "Kích hoạt tài khoản",
+  "ACTIVATION_INTRO": "Bấm vào link sau để kích hoạt tài khoản:",
+  "ACTIVATION_EXPIRY": "Link có hiệu lực trong <b>24 giờ</b>.",
+
+  "RESET_PASSWORD_SUBJECT": "Đặt lại mật khẩu",
+  "RESET_PASSWORD_INTRO": "Bấm vào link sau để đặt lại mật khẩu:",
+  "RESET_PASSWORD_EXPIRY": "Link có hiệu lực trong <b>1 giờ</b>. Nếu không phải bạn yêu cầu, hãy bỏ qua email này.",
+
+  "PASSWORD_CHANGED_SUBJECT": "Mật khẩu đã được thay đổi",
+  "PASSWORD_CHANGED_BODY": "Mật khẩu tài khoản của bạn vừa được thay đổi.",
+  "PASSWORD_CHANGED_WARNING": "Nếu không phải bạn thực hiện, hãy liên hệ ngay với chúng tôi.",
+
+  "ORDER_CREATED_SUBJECT": "Đã nhận đơn hàng {orderCode}",
+  "ORDER_CREATED_BODY": "Chúng tôi đã nhận đơn hàng <b>{orderCode}</b> với tổng tiền <b>{money}</b>.",
+  "ORDER_CREATED_NOTE": "Đơn đang chờ xác nhận, chúng tôi sẽ báo lại sớm.",
+
+  "ORDER_CONFIRMED_SUBJECT": "Đơn hàng {orderCode} đã được xác nhận",
+  "ORDER_CONFIRMED_BODY": "Đơn hàng <b>{orderCode}</b> đã được xác nhận và đang được chuẩn bị.",
+
+  "ORDER_REJECTED_SUBJECT": "Đơn hàng {orderCode} bị từ chối",
+  "ORDER_REJECTED_BODY": "Rất tiếc, đơn hàng <b>{orderCode}</b> đã bị từ chối.",
+  "ORDER_REJECTED_REASON": "<b>Lý do:</b> {reason}"
+}

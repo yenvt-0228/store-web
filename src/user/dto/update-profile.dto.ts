@@ -1,4 +1,5 @@
 import {
+  IsIn,
   IsOptional,
   IsString,
   IsUrl,
@@ -6,6 +7,8 @@ import {
   MaxLength,
 } from 'class-validator';
 import { i18nValidationMessage } from 'nestjs-i18n';
+import type { Locale } from '../../common/constants/locale.constant';
+import { SUPPORTED_LOCALES } from '../../common/constants/locale.constant';
 
 export class UpdateProfileDto {
   @IsOptional()
@@ -28,4 +31,10 @@ export class UpdateProfileDto {
   @IsUrl({}, { message: i18nValidationMessage('validation.IS_URL') })
   @MaxLength(500, { message: i18nValidationMessage('validation.MAX_LENGTH') })
   avatar?: string;
+
+  @IsOptional()
+  @IsIn(SUPPORTED_LOCALES, {
+    message: i18nValidationMessage('validation.IS_ENUM'),
+  })
+  locale?: Locale;
 }

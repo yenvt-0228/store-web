@@ -19,14 +19,16 @@ enum UserStatus {
 model User {
   id       String  @id @default(uuid(7)) @db.Uuid
   name     String  @db.VarChar(255)
-  email    String  @unique @db.VarChar(255) 
+  email    String  @unique @db.VarChar(255)
   password String  @db.VarChar(255) // luôn là chuỗi bcrypt
   phone    String? @db.VarChar(20)
   address  String? @db.VarChar(255)
   avatar   String? @db.VarChar(500)
 
-  status UserStatus @default(ACTIVE)
-  isVerified Boolean @default(false) @map("is_verified")
+  status     UserStatus @default(ACTIVE)
+  isVerified Boolean    @default(false) @map("is_verified")
+
+  locale String @default("vi") @db.VarChar(5)
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -209,7 +211,7 @@ model Order {
 
   status        OrderStatus        @default(PENDING)
   paymentStatus OrderPaymentStatus @default(UNPAID) @map("payment_status")
-  paymentMethod PaymentMethod      @map("payment_method")
+  paymentMethod PaymentMethod @map("payment_method")
 
   totalAmount Decimal @map("total_amount") @db.Decimal(12, 2)
 
@@ -249,6 +251,7 @@ model OrderItem {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([orderId])
+  @@index([productId])
   @@map("order_items")
 }
 
@@ -257,7 +260,6 @@ model Payment {
 
   orderId String @unique @map("order_id") @db.Uuid
   order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
   paymentMethod PaymentMethod @map("payment_method")
   transactionId String?       @unique @map("transaction_id") @db.VarChar(100)
 

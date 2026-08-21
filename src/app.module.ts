@@ -11,6 +11,7 @@ import {
 } from 'nestjs-i18n';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
+import { CategoryModule } from './category/category.module';
 import { MailModule } from './mail/mail.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
@@ -42,6 +43,7 @@ import { UserModule } from './user/user.module';
     AuthModule,
     UserModule,
     AdminModule,
+    CategoryModule,
     TasksModule,
   ],
 })

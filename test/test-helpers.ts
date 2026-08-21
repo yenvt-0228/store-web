@@ -8,12 +8,19 @@ import { I18nValidationPipe } from 'nestjs-i18n';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
+import type { Locale } from '../src/common/constants/locale.constant';
+import { DEFAULT_LOCALE } from '../src/common/constants/locale.constant';
 import { RoleName } from '../src/common/constants/role.constant';
 import { MailEvent } from '../src/common/events/mail.event';
 import { OrderEvent } from '../src/common/events/order.event';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
 import { ValidationExceptionFilter } from '../src/common/filters/validation-exception.filter';
-import { ProductStatus, UserStatus } from '../src/generated/prisma/enums';
+import {
+  OrderPaymentStatus,
+  PaymentStatus,
+  ProductStatus,
+  UserStatus,
+} from '../src/generated/prisma/enums';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RedisService } from '../src/redis/redis.service';
 
@@ -105,6 +112,7 @@ export async function seedUser(
     roles?: string[];
     isVerified?: boolean;
     status?: UserStatus;
+    locale?: Locale;
   } = {},
 ): Promise<SeededUser> {
   const password = overrides.password ?? 'secret123';
@@ -118,6 +126,7 @@ export async function seedUser(
       password: await bcrypt.hash(password, 4),
       isVerified: overrides.isVerified ?? true,
       status: overrides.status ?? UserStatus.ACTIVE,
+      locale: overrides.locale ?? DEFAULT_LOCALE,
       roles: {
         create: roles.map((name) => ({
           role: { connectOrCreate: { where: { name }, create: { name } } },
@@ -232,6 +241,7 @@ export interface CapturedMail {
   token?: string;
   orderCode?: string;
   reason?: string;
+  locale?: Locale;
 }
 
 export function captureMails(app: INestApplication): CapturedMail[] {
@@ -351,3 +361,34 @@ export type OrderListBody = {
   data: OrderPayload[];
   meta: { total: number; page: number; limit: number; totalPages: number };
 };
+
+export async function expectOrderInvariants(
+  app: INestApplication,
+  orderId: string,
+): Promise<void> {
+  const order = await db(app).order.findUniqueOrThrow({
+    where: { id: orderId },
+    include: { items: true, payment: true },
+  });
+
+  for (const item of order.items) {
+    expect(Number(item.subtotal)).toBe(
+      Number(item.productPrice) * item.quantity,
+    );
+  }
+
+  const sum = order.items.reduce((acc, item) => acc + Number(item.subtotal), 0);
+  expect(Number(order.totalAmount)).toBe(sum);
+
+  if (order.payment) {
+    if (order.payment.status === PaymentStatus.PAID) {
+      expect([OrderPaymentStatus.PAID, OrderPaymentStatus.REFUNDED]).toContain(
+        order.paymentStatus,
+      );
+      expect(order.payment.paidAt).not.toBeNull();
+    }
+    if (order.payment.status === PaymentStatus.FAILED) {
+      expect(order.paymentStatus).not.toBe(OrderPaymentStatus.PAID);
+    }
+  }
+}

@@ -1,2 +1,2 @@
-{{#p}}Rất tiếc, đơn hàng <b>{{orderCode}}</b> đã bị từ chối.{{/p}}
-{{#p}}<b>Lý do:</b> {{reason}}{{/p}}
+{{#p}}{{t 'mail.ORDER_REJECTED_BODY' orderCode=orderCode}}{{/p}}
+{{#p}}{{t 'mail.ORDER_REJECTED_REASON' reason=reason}}{{/p}}
