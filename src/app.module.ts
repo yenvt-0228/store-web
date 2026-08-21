@@ -17,6 +17,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { TasksModule } from './tasks/tasks.module';
 import { UserModule } from './user/user.module';
+import { ProductModule } from './product/product.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { UserModule } from './user/user.module';
     UserModule,
     AdminModule,
     CategoryModule,
+    ProductModule,
     TasksModule,
   ],
 })
