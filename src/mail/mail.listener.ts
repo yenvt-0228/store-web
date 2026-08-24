@@ -15,19 +15,13 @@ import type {
   UserRegisteredEvent,
 } from '../common/events/mail.event';
 import { MailDispatcher } from './mail.dispatcher';
-import {
-  activationMail,
-  orderConfirmedMail,
-  orderCreatedMail,
-  orderRejectedMail,
-  passwordChangedMail,
-  resetPasswordMail,
-} from './mail.renderer';
+import { MailRenderer } from './mail.renderer';
 
 @Injectable()
 export class MailListener {
   constructor(
     private dispatcher: MailDispatcher,
+    private renderer: MailRenderer,
     private config: ConfigService,
   ) {}
 
@@ -46,7 +40,7 @@ export class MailListener {
   async onUserRegistered(event: UserRegisteredEvent): Promise<void> {
     const link = `${this.apiUrl}/auth/activate?token=${event.token}`;
     await this.dispatcher.dispatch(
-      activationMail(event.email, event.name, link),
+      this.renderer.activation(event.email, event.name, link, event.locale),
     );
   }
 
@@ -56,25 +50,26 @@ export class MailListener {
   ): Promise<void> {
     const link = `${this.webUrl}/reset-password?token=${event.token}`;
     await this.dispatcher.dispatch(
-      resetPasswordMail(event.email, event.name, link),
+      this.renderer.resetPassword(event.email, event.name, link, event.locale),
     );
   }
 
   @OnEvent(MailEvent.PASSWORD_CHANGED)
   async onPasswordChanged(event: PasswordChangedEvent): Promise<void> {
     await this.dispatcher.dispatch(
-      passwordChangedMail(event.email, event.name),
+      this.renderer.passwordChanged(event.email, event.name, event.locale),
     );
   }
 
   @OnEvent(OrderEvent.CREATED)
   async onOrderCreated(event: OrderCreatedEvent): Promise<void> {
     await this.dispatcher.dispatch(
-      orderCreatedMail(
+      this.renderer.orderCreated(
         event.email,
         event.name,
         event.orderCode,
         event.totalAmount,
+        event.locale,
       ),
     );
   }
@@ -82,14 +77,25 @@ export class MailListener {
   @OnEvent(OrderEvent.CONFIRMED)
   async onOrderConfirmed(event: OrderConfirmedEvent): Promise<void> {
     await this.dispatcher.dispatch(
-      orderConfirmedMail(event.email, event.name, event.orderCode),
+      this.renderer.orderConfirmed(
+        event.email,
+        event.name,
+        event.orderCode,
+        event.locale,
+      ),
     );
   }
 
   @OnEvent(OrderEvent.REJECTED)
   async onOrderRejected(event: OrderRejectedEvent): Promise<void> {
     await this.dispatcher.dispatch(
-      orderRejectedMail(event.email, event.name, event.orderCode, event.reason),
+      this.renderer.orderRejected(
+        event.email,
+        event.name,
+        event.orderCode,
+        event.reason,
+        event.locale,
+      ),
     );
   }
 }

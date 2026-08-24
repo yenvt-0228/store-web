@@ -1,7 +1,11 @@
+import { Injectable } from '@nestjs/common';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Handlebars from 'handlebars';
+import { I18nService } from 'nestjs-i18n';
+import { Locale, LOCALE_TAGS } from '../common/constants/locale.constant';
 import { MailPayload, SHOP_NAME } from './mail.constant';
+
 const TEMPLATE_DIR = join(__dirname, 'templates');
 
 const CACHE_ENABLED = process.env.NODE_ENV === 'production';
@@ -51,8 +55,8 @@ const HTML_ENTITIES: Record<string, string> = {
 
 const ENTITY_PATTERN = new RegExp(Object.keys(HTML_ENTITIES).join('|'), 'g');
 
-function toPlainText(bodyHtml: string): string {
-  return bodyHtml
+function toPlainText(html: string): string {
+  return html
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n')
     .replace(/<[^>]+>/g, '')
@@ -63,88 +67,164 @@ function toPlainText(bodyHtml: string): string {
     .join('\n\n');
 }
 
-function render(
-  template: string,
-  to: string,
-  name: string,
-  subject: string,
-  context: Record<string, unknown> = {},
-): MailPayload {
-  const body = compile(`${template}.hbs`)({ name, ...context });
+@Injectable()
+export class MailRenderer {
+  constructor(private i18n: I18nService) {}
 
-  const html = compile('layouts/main.hbs')({
-    body,
-    name,
-    subject,
-    shopName: SHOP_NAME,
-    year: new Date().getFullYear(),
-  });
+  /*  TÀI KHOẢN  */
 
-  return {
-    to,
-    subject,
-    html,
-    text: `Xin chào ${name},\n\n${toPlainText(body)}`,
-  };
-}
+  activation(
+    to: string,
+    name: string,
+    link: string,
+    lang: Locale,
+  ): MailPayload {
+    return this.render('activation', {
+      to,
+      name,
+      lang,
+      subjectKey: 'mail.ACTIVATION_SUBJECT',
+      context: { link },
+    });
+  }
 
-export function activationMail(
-  to: string,
-  name: string,
-  link: string,
-): MailPayload {
-  return render('activation', to, name, 'Kích hoạt tài khoản', { link });
-}
+  resetPassword(
+    to: string,
+    name: string,
+    link: string,
+    lang: Locale,
+  ): MailPayload {
+    return this.render('reset-password', {
+      to,
+      name,
+      lang,
+      subjectKey: 'mail.RESET_PASSWORD_SUBJECT',
+      context: { link },
+    });
+  }
 
-export function resetPasswordMail(
-  to: string,
-  name: string,
-  link: string,
-): MailPayload {
-  return render('reset-password', to, name, 'Đặt lại mật khẩu', { link });
-}
+  passwordChanged(to: string, name: string, lang: Locale): MailPayload {
+    return this.render('password-changed', {
+      to,
+      name,
+      lang,
+      subjectKey: 'mail.PASSWORD_CHANGED_SUBJECT',
+    });
+  }
 
-export function passwordChangedMail(to: string, name: string): MailPayload {
-  return render('password-changed', to, name, 'Mật khẩu đã được thay đổi');
-}
+  /*  ĐƠN HÀNG  */
 
-export function orderCreatedMail(
-  to: string,
-  name: string,
-  orderCode: string,
-  totalAmount: number,
-): MailPayload {
-  return render('order-created', to, name, `Đã nhận đơn hàng ${orderCode}`, {
-    orderCode,
-    money: totalAmount.toLocaleString('vi-VN'),
-  });
-}
+  orderCreated(
+    to: string,
+    name: string,
+    orderCode: string,
+    totalAmount: number,
+    lang: Locale,
+  ): MailPayload {
+    return this.render('order-created', {
+      to,
+      name,
+      lang,
+      subjectKey: 'mail.ORDER_CREATED_SUBJECT',
+      subjectArgs: { orderCode },
+      context: { orderCode, money: this.money(totalAmount, lang) },
+    });
+  }
 
-export function orderConfirmedMail(
-  to: string,
-  name: string,
-  orderCode: string,
-): MailPayload {
-  return render(
-    'order-confirmed',
-    to,
-    name,
-    `Đơn hàng ${orderCode} đã được xác nhận`,
-    { orderCode },
-  );
-}
+  orderConfirmed(
+    to: string,
+    name: string,
+    orderCode: string,
+    lang: Locale,
+  ): MailPayload {
+    return this.render('order-confirmed', {
+      to,
+      name,
+      lang,
+      subjectKey: 'mail.ORDER_CONFIRMED_SUBJECT',
+      subjectArgs: { orderCode },
+      context: { orderCode },
+    });
+  }
 
-export function orderRejectedMail(
-  to: string,
-  name: string,
-  orderCode: string,
-  reason: string,
-): MailPayload {
-  return render(
-    'order-rejected',
-    to,
-    name,
-    `Đơn hàng ${orderCode} bị từ chối`,
-    { orderCode, reason },
-  );
+  orderRejected(
+    to: string,
+    name: string,
+    orderCode: string,
+    reason: string,
+    lang: Locale,
+  ): MailPayload {
+    return this.render('order-rejected', {
+      to,
+      name,
+      lang,
+      subjectKey: 'mail.ORDER_REJECTED_SUBJECT',
+      subjectArgs: { orderCode },
+      context: { orderCode, reason },
+    });
+  }
+
+  /*  Common chung */
+
+  private money(amount: number, lang: Locale): string {
+    return this.t('mail.MONEY', lang, {
+      amount: new Intl.NumberFormat(LOCALE_TAGS[lang]).format(amount),
+    });
+  }
+
+  private t(key: string, lang: Locale, args?: Record<string, unknown>): string {
+    return this.i18n.t(key, { lang, args });
+  }
+
+  private translateHelper(lang: Locale) {
+    return (key: string, options: Handlebars.HelperOptions) => {
+      const args = Object.fromEntries(
+        Object.entries(options.hash ?? {}).map(([name, value]) => [
+          name,
+          Handlebars.escapeExpression(String(value)),
+        ]),
+      );
+      return new Handlebars.SafeString(this.t(key, lang, args));
+    };
+  }
+
+  private render(
+    template: string,
+    options: {
+      to: string;
+      name: string;
+      lang: Locale;
+      subjectKey: string;
+      subjectArgs?: Record<string, unknown>;
+      context?: Record<string, unknown>;
+    },
+  ): MailPayload {
+    const { to, name, lang, subjectKey, subjectArgs, context } = options;
+
+    const subject = this.t(subjectKey, lang, subjectArgs);
+
+    const helpers = { t: this.translateHelper(lang) };
+
+    const body = compile(`${template}.hbs`)(context ?? {}, { helpers });
+
+    const html = compile('layouts/main.hbs')(
+      {
+        body,
+        name,
+        subject,
+        shopName: SHOP_NAME,
+        year: new Date().getFullYear(),
+      },
+      { helpers },
+    );
+
+    const greeting = this.t('mail.GREETING', lang, { name });
+
+    return {
+      to,
+      subject,
+      html,
+      text: `${toPlainText(greeting)}\n\n${toPlainText(body)}`,
+    };
+  }
 }

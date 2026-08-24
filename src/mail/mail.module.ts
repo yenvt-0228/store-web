@@ -5,6 +5,7 @@ import { MAIL_QUEUE } from './mail.constant';
 import { MailDispatcher } from './mail.dispatcher';
 import { MailListener } from './mail.listener';
 import { MailProcessor } from './mail.processor';
+import { MailRenderer } from './mail.renderer';
 import { MailService } from './mail.service';
 
 @Module({})
@@ -35,6 +36,7 @@ export class MailModule {
       providers: [
         MailService,
         MailDispatcher,
+        MailRenderer,
         MailListener,
         ...(queueEnabled ? [MailProcessor] : []),
       ],

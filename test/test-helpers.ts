@@ -8,12 +8,20 @@ import { I18nValidationPipe } from 'nestjs-i18n';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
+import type { Locale } from '../src/common/constants/locale.constant';
+import { DEFAULT_LOCALE } from '../src/common/constants/locale.constant';
 import { RoleName } from '../src/common/constants/role.constant';
 import { MailEvent } from '../src/common/events/mail.event';
 import { OrderEvent } from '../src/common/events/order.event';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
 import { ValidationExceptionFilter } from '../src/common/filters/validation-exception.filter';
-import { ProductStatus, UserStatus } from '../src/generated/prisma/enums';
+import {
+  ImageEntityType,
+  OrderPaymentStatus,
+  PaymentStatus,
+  ProductStatus,
+  UserStatus,
+} from '../src/generated/prisma/enums';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RedisService } from '../src/redis/redis.service';
 
@@ -76,7 +84,7 @@ export async function createTestApp(): Promise<INestApplication> {
 export async function resetDb(app: INestApplication) {
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "payments","order_items","orders","products","categories","refresh_tokens","email_verification_tokens","password_reset_tokens","user_roles","roles","users" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "images","payments","order_items","orders","products","categories","refresh_tokens","email_verification_tokens","password_reset_tokens","user_roles","roles","users" RESTART IDENTITY CASCADE',
   );
   const redis = app.get(RedisService);
   await redis.ensureConnected();
@@ -105,6 +113,7 @@ export async function seedUser(
     roles?: string[];
     isVerified?: boolean;
     status?: UserStatus;
+    locale?: Locale;
   } = {},
 ): Promise<SeededUser> {
   const password = overrides.password ?? 'secret123';
@@ -118,6 +127,7 @@ export async function seedUser(
       password: await bcrypt.hash(password, 4),
       isVerified: overrides.isVerified ?? true,
       status: overrides.status ?? UserStatus.ACTIVE,
+      locale: overrides.locale ?? DEFAULT_LOCALE,
       roles: {
         create: roles.map((name) => ({
           role: { connectOrCreate: { where: { name }, create: { name } } },
@@ -232,6 +242,7 @@ export interface CapturedMail {
   token?: string;
   orderCode?: string;
   reason?: string;
+  locale?: Locale;
 }
 
 export function captureMails(app: INestApplication): CapturedMail[] {
@@ -351,3 +362,87 @@ export type OrderListBody = {
   data: OrderPayload[];
   meta: { total: number; page: number; limit: number; totalPages: number };
 };
+
+export async function expectOrderInvariants(
+  app: INestApplication,
+  orderId: string,
+): Promise<void> {
+  const order = await db(app).order.findUniqueOrThrow({
+    where: { id: orderId },
+    include: { items: true, payment: true },
+  });
+
+  for (const item of order.items) {
+    expect(Number(item.subtotal)).toBe(
+      Number(item.productPrice) * item.quantity,
+    );
+  }
+
+  const sum = order.items.reduce((acc, item) => acc + Number(item.subtotal), 0);
+  expect(Number(order.totalAmount)).toBe(sum);
+
+  if (order.payment) {
+    if (order.payment.status === PaymentStatus.PAID) {
+      expect([OrderPaymentStatus.PAID, OrderPaymentStatus.REFUNDED]).toContain(
+        order.paymentStatus,
+      );
+      expect(order.payment.paidAt).not.toBeNull();
+    }
+    if (order.payment.status === PaymentStatus.FAILED) {
+      expect(order.paymentStatus).not.toBe(OrderPaymentStatus.PAID);
+    }
+  }
+}
+
+/* ----------------------------- ẢNH SẢN PHẨM ----------------------------- */
+
+export async function seedProductImage(
+  app: INestApplication,
+  productId: string,
+  overrides: {
+    imageUrl?: string;
+    sortOrder?: number;
+    isPrimary?: boolean;
+    deletedAt?: Date | null;
+  } = {},
+) {
+  return db(app).image.create({
+    data: {
+      entityType: ImageEntityType.PRODUCT,
+      entityId: productId,
+      imageUrl: overrides.imageUrl ?? 'https://cdn.example.com/anh.jpg',
+      sortOrder: overrides.sortOrder ?? 0,
+      isPrimary: overrides.isPrimary ?? false,
+      deletedAt: overrides.deletedAt ?? null,
+    },
+  });
+}
+
+// Ảnh ĐANG HOẠT ĐỘNG của một sản phẩm (bỏ ảnh đã xoá mềm).
+export async function activeImagesOf(app: INestApplication, productId: string) {
+  return db(app).image.findMany({
+    where: {
+      entityType: ImageEntityType.PRODUCT,
+      entityId: productId,
+      deletedAt: null,
+    },
+    orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+  });
+}
+
+/**
+ * Bất biến của ảnh: có ảnh đang hoạt động thì phải có ĐÚNG một ảnh chính.
+ *
+ * DB đã có partial unique index chặn việc có HAI ảnh chính. Chốt còn thiếu là
+ * chiều ngược lại — xoá ảnh chính mà không đề bạt ảnh khác sẽ để sản phẩm có
+ * ảnh nhưng không ảnh nào là ảnh đại diện, DB không hề chặn.
+ */
+export async function expectExactlyOnePrimaryImage(
+  app: INestApplication,
+  productId: string,
+): Promise<void> {
+  const images = await activeImagesOf(app, productId);
+  if (images.length === 0) return;
+
+  expect(images.filter((image) => image.isPrimary)).toHaveLength(1);
+}

@@ -35,7 +35,7 @@
             </tr>
             <tr>
               <td style="padding: 28px 28px 14px;">
-                {{#p}}Xin chào <b>{{name}}</b>,{{/p}}
+                {{#p}}{{t 'mail.GREETING' name=name}}{{/p}}
                 {{{body}}}
               </td>
             </tr>
@@ -45,7 +45,7 @@
               >
                 <p
                   style="margin: 0 0 6px; font-size: 13px; line-height: 1.5; color: #6b7280;"
-                >Email này được gửi tự động, vui lòng không trả lời.</p>
+                >{{t 'mail.FOOTER_AUTO'}}</p>
                 <p
                   style="margin: 0; font-size: 13px; line-height: 1.5; color: #9ca3af;"
                 >&copy; {{year}} {{shopName}}</p>

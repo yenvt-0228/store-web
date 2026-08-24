@@ -16,6 +16,7 @@ import { userWithRolesInclude } from '../common/types/user-with-roles';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { toLocale } from '../common/constants/locale.constant';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -73,6 +74,7 @@ export class UserService {
     this.events.emit(MailEvent.PASSWORD_CHANGED, {
       email: user.email,
       name: user.name,
+      locale: toLocale(user.locale),
     });
 
     return { message: this.i18n.t('user.PASSWORD_CHANGED') };

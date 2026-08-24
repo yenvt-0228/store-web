@@ -1,0 +1,6 @@
+{
+  "NOT_FOUND": "Không tìm thấy danh mục",
+  "NAME_TAKEN": "Tên danh mục đã được sử dụng",
+  "HAS_PRODUCTS": "Không thể xoá danh mục khi vẫn còn sản phẩm",
+  "DELETED": "Đã xoá danh mục"
+}

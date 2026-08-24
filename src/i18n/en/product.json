@@ -1,0 +1,7 @@
+{
+  "NOT_FOUND": "Product not found or no longer on sale",
+  "DELETED": "Product deleted",
+  "IMAGE_NOT_FOUND": "This image does not belong to the product",
+  "IMAGE_DELETED": "Image deleted",
+  "IMAGE_LIMIT": "A product can have at most {max} images"
+}

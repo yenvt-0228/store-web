@@ -11,11 +11,14 @@ import {
 } from 'nestjs-i18n';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
+import { CategoryModule } from './category/category.module';
 import { MailModule } from './mail/mail.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { TasksModule } from './tasks/tasks.module';
+import { UploadModule } from './upload/upload.module';
 import { UserModule } from './user/user.module';
+import { ProductModule } from './product/product.module';
 
 @Module({
   imports: [
@@ -42,6 +45,9 @@ import { UserModule } from './user/user.module';
     AuthModule,
     UserModule,
     AdminModule,
+    CategoryModule,
+    ProductModule,
+    UploadModule,
     TasksModule,
   ],
 })

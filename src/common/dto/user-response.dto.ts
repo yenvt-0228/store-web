@@ -11,6 +11,7 @@ export class UserResponseDto {
   @Expose() avatar: string | null;
   @Expose() status: UserStatus;
   @Expose() isVerified: boolean;
+  @Expose() locale: string;
   @Expose() createdAt: Date;
 
   roles: string[];
