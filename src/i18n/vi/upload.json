@@ -1,0 +1,5 @@
+{
+  "NO_FILE": "Chưa chọn file nào",
+  "TOO_LARGE": "Ảnh không được vượt quá {max}MB",
+  "NOT_AN_IMAGE": "File không phải ảnh hợp lệ. Chỉ nhận: {types}"
+}

@@ -28,7 +28,10 @@ export class UpdateProfileDto {
   address?: string;
 
   @IsOptional()
-  @IsUrl({}, { message: i18nValidationMessage('validation.IS_URL') })
+  @IsUrl(
+    { require_tld: false },
+    { message: i18nValidationMessage('validation.IS_URL') },
+  )
   @MaxLength(500, { message: i18nValidationMessage('validation.MAX_LENGTH') })
   avatar?: string;
 

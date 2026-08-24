@@ -16,6 +16,7 @@ import { MailModule } from './mail/mail.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { TasksModule } from './tasks/tasks.module';
+import { UploadModule } from './upload/upload.module';
 import { UserModule } from './user/user.module';
 import { ProductModule } from './product/product.module';
 
@@ -46,6 +47,7 @@ import { ProductModule } from './product/product.module';
     AdminModule,
     CategoryModule,
     ProductModule,
+    UploadModule,
     TasksModule,
   ],
 })

@@ -16,6 +16,7 @@ import { OrderEvent } from '../src/common/events/order.event';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
 import { ValidationExceptionFilter } from '../src/common/filters/validation-exception.filter';
 import {
+  ImageEntityType,
   OrderPaymentStatus,
   PaymentStatus,
   ProductStatus,
@@ -83,7 +84,7 @@ export async function createTestApp(): Promise<INestApplication> {
 export async function resetDb(app: INestApplication) {
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "payments","order_items","orders","products","categories","refresh_tokens","email_verification_tokens","password_reset_tokens","user_roles","roles","users" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "images","payments","order_items","orders","products","categories","refresh_tokens","email_verification_tokens","password_reset_tokens","user_roles","roles","users" RESTART IDENTITY CASCADE',
   );
   const redis = app.get(RedisService);
   await redis.ensureConnected();
@@ -391,4 +392,57 @@ export async function expectOrderInvariants(
       expect(order.paymentStatus).not.toBe(OrderPaymentStatus.PAID);
     }
   }
+}
+
+/* ----------------------------- ẢNH SẢN PHẨM ----------------------------- */
+
+export async function seedProductImage(
+  app: INestApplication,
+  productId: string,
+  overrides: {
+    imageUrl?: string;
+    sortOrder?: number;
+    isPrimary?: boolean;
+    deletedAt?: Date | null;
+  } = {},
+) {
+  return db(app).image.create({
+    data: {
+      entityType: ImageEntityType.PRODUCT,
+      entityId: productId,
+      imageUrl: overrides.imageUrl ?? 'https://cdn.example.com/anh.jpg',
+      sortOrder: overrides.sortOrder ?? 0,
+      isPrimary: overrides.isPrimary ?? false,
+      deletedAt: overrides.deletedAt ?? null,
+    },
+  });
+}
+
+// Ảnh ĐANG HOẠT ĐỘNG của một sản phẩm (bỏ ảnh đã xoá mềm).
+export async function activeImagesOf(app: INestApplication, productId: string) {
+  return db(app).image.findMany({
+    where: {
+      entityType: ImageEntityType.PRODUCT,
+      entityId: productId,
+      deletedAt: null,
+    },
+    orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+  });
+}
+
+/**
+ * Bất biến của ảnh: có ảnh đang hoạt động thì phải có ĐÚNG một ảnh chính.
+ *
+ * DB đã có partial unique index chặn việc có HAI ảnh chính. Chốt còn thiếu là
+ * chiều ngược lại — xoá ảnh chính mà không đề bạt ảnh khác sẽ để sản phẩm có
+ * ảnh nhưng không ảnh nào là ảnh đại diện, DB không hề chặn.
+ */
+export async function expectExactlyOnePrimaryImage(
+  app: INestApplication,
+  productId: string,
+): Promise<void> {
+  const images = await activeImagesOf(app, productId);
+  if (images.length === 0) return;
+
+  expect(images.filter((image) => image.isPrimary)).toHaveLength(1);
 }

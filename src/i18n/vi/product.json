@@ -1,4 +1,7 @@
 {
   "NOT_FOUND": "Không tìm thấy sản phẩm hoặc sản phẩm đã ngừng bán",
-  "DELETED": "Đã xoá sản phẩm"
+  "DELETED": "Đã xoá sản phẩm",
+  "IMAGE_NOT_FOUND": "Không tìm thấy ảnh này trong sản phẩm",
+  "IMAGE_DELETED": "Đã xoá ảnh",
+  "IMAGE_LIMIT": "Mỗi sản phẩm chỉ được có tối đa {max} ảnh"
 }

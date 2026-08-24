@@ -1,6 +1,7 @@
 import { toNumber } from '../../common/utils/money.util';
 import { Prisma } from '../../generated/prisma/client';
 import { ProductStatus } from '../../generated/prisma/enums';
+import { ProductImageResponseDto } from './product-image.dto';
 
 export class ProductResponseDto {
   id: string;
@@ -12,19 +13,29 @@ export class ProductResponseDto {
   status: ProductStatus;
   isFeatured: boolean;
   category: { id: string; name: string } | null;
+  images: ProductImageResponseDto[];
+  primaryImage: string | null;
   createdAt: Date;
 }
-
-type ProductWithCategory = Prisma.ProductGetPayload<{
-  include: { category: { select: { id: true; name: true } } };
-}>;
 
 export const productInclude = {
   category: { select: { id: true, name: true } },
 } satisfies Prisma.ProductInclude;
 
+type ProductWithCategory = Prisma.ProductGetPayload<{
+  include: typeof productInclude;
+}>;
+
+export interface ImageRow {
+  id: string;
+  imageUrl: string;
+  sortOrder: number;
+  isPrimary: boolean;
+}
+
 export function toProductResponse(
   product: ProductWithCategory,
+  images: ImageRow[] = [],
 ): ProductResponseDto {
   return {
     id: product.id,
@@ -38,6 +49,13 @@ export function toProductResponse(
     category: product.category
       ? { id: product.category.id, name: product.category.name }
       : null,
+    images: images.map((image) => ({
+      id: image.id,
+      imageUrl: image.imageUrl,
+      sortOrder: image.sortOrder,
+      isPrimary: image.isPrimary,
+    })),
+    primaryImage: images.find((image) => image.isPrimary)?.imageUrl ?? null,
     createdAt: product.createdAt,
   };
 }

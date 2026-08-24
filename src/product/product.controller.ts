@@ -13,6 +13,7 @@ export class ProductController {
   findAll(@Query() query: ListProductDto) {
     return this.productService.findAll(query, true);
   }
+
   @ApiOperation({ summary: 'Sản phẩm nổi bật' })
   @Get('featured')
   findFeatured(@Query() query: ListProductDto) {

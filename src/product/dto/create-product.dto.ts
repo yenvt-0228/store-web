@@ -1,5 +1,7 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsEnum,
   IsInt,
@@ -11,9 +13,11 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { i18nValidationMessage } from 'nestjs-i18n';
 import { ProductStatus } from '../../generated/prisma/enums';
+import { ProductImageInputDto } from './product-image.dto';
 
 export class CreateProductDto {
   @IsString({ message: i18nValidationMessage('validation.IS_STRING') })
@@ -51,4 +55,11 @@ export class CreateProductDto {
   @IsOptional()
   @IsBoolean({ message: i18nValidationMessage('validation.IS_BOOLEAN') })
   isFeatured?: boolean;
+
+  @IsOptional()
+  @IsArray({ message: i18nValidationMessage('validation.IS_ARRAY') })
+  @ArrayMaxSize(10, { message: i18nValidationMessage('validation.MAX') })
+  @ValidateNested({ each: true })
+  @Type(() => ProductImageInputDto)
+  images?: ProductImageInputDto[];
 }
