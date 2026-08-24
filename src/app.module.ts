@@ -19,6 +19,7 @@ import { TasksModule } from './tasks/tasks.module';
 import { UploadModule } from './upload/upload.module';
 import { UserModule } from './user/user.module';
 import { ProductModule } from './product/product.module';
+import { CartModule } from './cart/cart.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { ProductModule } from './product/product.module';
     CategoryModule,
     ProductModule,
     UploadModule,
+    CartModule,
     TasksModule,
   ],
 })
