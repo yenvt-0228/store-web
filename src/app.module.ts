@@ -20,6 +20,8 @@ import { UploadModule } from './upload/upload.module';
 import { UserModule } from './user/user.module';
 import { ProductModule } from './product/product.module';
 import { CartModule } from './cart/cart.module';
+import { OrderModule } from './order/order.module';
+import { PaymentModule } from './payment/payment.module';
 
 @Module({
   imports: [
@@ -50,6 +52,8 @@ import { CartModule } from './cart/cart.module';
     ProductModule,
     UploadModule,
     CartModule,
+    OrderModule,
+    PaymentModule,
     TasksModule,
   ],
 })

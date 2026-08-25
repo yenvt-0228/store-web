@@ -1,0 +1,12 @@
+{
+  "NOT_FOUND": "Không tìm thấy giao dịch thanh toán",
+  "ORDER_CLOSED": "Đơn hàng đã bị huỷ hoặc từ chối nên không thanh toán được",
+  "ALREADY_PAID": "Đơn hàng này đã được thanh toán",
+  "ALREADY_PROCESSED": "Giao dịch này đã được xử lý",
+  "COD_CREATED": "Đã ghi nhận đơn hàng. Bạn sẽ thanh toán khi nhận hàng",
+  "ONLINE_CREATED": "Vui lòng tiếp tục tới cổng thanh toán để hoàn tất",
+  "SUCCESS": "Thanh toán thành công",
+  "FAILED": "Thanh toán thất bại",
+  "INVALID_SIGNATURE": "Chữ ký callback không hợp lệ",
+  "CALLBACK_NOT_CONFIGURED": "Chưa cấu hình callback thanh toán"
+}

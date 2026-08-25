@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { ProductStatus } from '../src/generated/prisma/enums';
+import { RedisService } from '../src/redis/redis.service';
 import {
   CartBody,
   SeededProduct,
@@ -19,6 +20,11 @@ describe('Cart (e2e) — giỏ hàng lưu trong Redis', () => {
   let product: SeededProduct;
 
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
+
+  const redis = () => app.get(RedisService).client;
+  const ttlOf = (userId: string) => redis().ttl(`cart:${userId}`);
+
+  const THIRTY_DAYS = 30 * 24 * 60 * 60;
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -100,6 +106,61 @@ describe('Cart (e2e) — giỏ hàng lưu trong Redis', () => {
       .set(auth(me.accessToken))
       .send({ productId: product.id, quantity: 5 })
       .expect(400);
+  });
+
+  it('POST /cart/items 10 request song song -> cộng dồn đủ 10, không mất update', async () => {
+    const add = () =>
+      http(app)
+        .post('/cart/items')
+        .set(auth(me.accessToken))
+        .send({ productId: product.id, quantity: 1 });
+
+    const responses = await Promise.all(Array.from({ length: 10 }, add));
+    expect(responses.every((res) => res.status === 201)).toBe(true);
+
+    const res = await http(app)
+      .get('/cart')
+      .set(auth(me.accessToken))
+      .expect(200);
+
+    expect(body<CartBody>(res).cart.items[0].quantity).toBe(10);
+  });
+
+  it('POST /cart/items cộng dồn vượt trần 99 -> 400 và giỏ giữ nguyên', async () => {
+    const many = await seedProduct(app, { name: 'Hàng nhiều', quantity: 500 });
+    const add = (quantity: number) =>
+      http(app)
+        .post('/cart/items')
+        .set(auth(me.accessToken))
+        .send({ productId: many.id, quantity });
+
+    await add(60).expect(201);
+    await add(60).expect(400);
+
+    const res = await http(app)
+      .get('/cart')
+      .set(auth(me.accessToken))
+      .expect(200);
+
+    const item = body<CartBody>(res).cart.items.find(
+      (i) => i.productId === many.id,
+    );
+    expect(item?.quantity).toBe(60);
+  });
+
+  it('POST /cart/items vượt tồn kho -> không để lại rác trong giỏ', async () => {
+    await http(app)
+      .post('/cart/items')
+      .set(auth(me.accessToken))
+      .send({ productId: product.id, quantity: 11 })
+      .expect(400);
+
+    const res = await http(app)
+      .get('/cart')
+      .set(auth(me.accessToken))
+      .expect(200);
+
+    expect(body<CartBody>(res).cart.items).toEqual([]);
   });
 
   it('POST /cart/items sản phẩm không tồn tại -> 404', async () => {
@@ -185,6 +246,29 @@ describe('Cart (e2e) — giỏ hàng lưu trong Redis', () => {
     expect(body<CartBody>(res).cart.items).toEqual([]);
   });
 
+  it('GET /cart cũng gia hạn TTL (TTL trượt, không chỉ khi thêm/sửa)', async () => {
+    await http(app)
+      .post('/cart/items')
+      .set(auth(me.accessToken))
+      .send({ productId: product.id, quantity: 1 })
+      .expect(201);
+
+    // Giả lập giỏ sắp hết hạn.
+    await redis().expire(`cart:${me.id}`, 100);
+    expect(await ttlOf(me.id)).toBeLessThanOrEqual(100);
+
+    await http(app).get('/cart').set(auth(me.accessToken)).expect(200);
+
+    expect(await ttlOf(me.id)).toBeGreaterThan(THIRTY_DAYS - 60);
+  });
+
+  it('GET /cart khi giỏ rỗng -> không tạo key rác trong Redis', async () => {
+    await http(app).get('/cart').set(auth(me.accessToken)).expect(200);
+
+    // -2 = key không tồn tại.
+    expect(await ttlOf(me.id)).toBe(-2);
+  });
+
   it('Giỏ hàng tách riêng theo từng user', async () => {
     const other = await seedUser(app, { email: 'khac@example.com' });
 
@@ -221,6 +305,62 @@ describe('Cart (e2e) — giỏ hàng lưu trong Redis', () => {
 
     const { cart } = body<CartBody>(res);
     expect(cart.items[0].available).toBe(false);
+    expect(cart.items[0].reason).toBe('INACTIVE');
     expect(cart.totalAmount).toBe(0);
+  });
+
+  it('Tồn kho tụt dưới số trong giỏ -> reason INSUFFICIENT_STOCK', async () => {
+    await http(app)
+      .post('/cart/items')
+      .set(auth(me.accessToken))
+      .send({ productId: product.id, quantity: 6 })
+      .expect(201);
+
+    await db(app).product.update({
+      where: { id: product.id },
+      data: { quantity: 2 },
+    });
+
+    const res = await http(app)
+      .get('/cart')
+      .set(auth(me.accessToken))
+      .expect(200);
+
+    const { cart } = body<CartBody>(res);
+    expect(cart.items[0].available).toBe(false);
+    expect(cart.items[0].reason).toBe('INSUFFICIENT_STOCK');
+    expect(cart.items[0].stock).toBe(2);
+  });
+
+  it('Sản phẩm bị xoá mềm -> reason DELETED', async () => {
+    await http(app)
+      .post('/cart/items')
+      .set(auth(me.accessToken))
+      .send({ productId: product.id, quantity: 1 })
+      .expect(201);
+
+    await db(app).product.update({
+      where: { id: product.id },
+      data: { deletedAt: new Date() },
+    });
+
+    const res = await http(app)
+      .get('/cart')
+      .set(auth(me.accessToken))
+      .expect(200);
+
+    const { cart } = body<CartBody>(res);
+    expect(cart.items[0].available).toBe(false);
+    expect(cart.items[0].reason).toBe('DELETED');
+  });
+
+  it('Món đặt được -> reason null', async () => {
+    const res = await http(app)
+      .post('/cart/items')
+      .set(auth(me.accessToken))
+      .send({ productId: product.id, quantity: 1 })
+      .expect(201);
+
+    expect(body<CartBody>(res).cart.items[0].reason).toBeNull();
   });
 });
