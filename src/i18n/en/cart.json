@@ -1,0 +1,6 @@
+{
+  "ITEM_NOT_FOUND": "This product is not in your cart",
+  "OUT_OF_STOCK": "{name} only has {stock} left in stock",
+  "PRODUCT_UNAVAILABLE": "Product no longer available",
+  "CLEARED": "Cart cleared"
+}
