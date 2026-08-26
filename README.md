@@ -260,6 +260,57 @@ vẫn kiểm được validate, phân quyền và dạng URL trả về mà khô
 Image ra tại `ghcr.io/<user>/<repo>` với tag `sha-<commit>`, `latest` (từ `main`)
 và tag semver khi push tag. Dùng `GITHUB_TOKEN` có sẵn — không cần tạo secret.
 
+### Deploy lên Render
+
+CD chỉ đẩy image lên GHCR; muốn nó deploy thật thì làm bốn bước sau **một lần**.
+
+**1. Mở public cho package trên GHCR.** Sau khi CD chạy lần đầu, vào
+`github.com/<user>?tab=packages` → chọn package → *Package settings* → *Change visibility*
+→ Public. Để private thì phải khai báo credential registry bên Render, mở public nhanh hơn
+cho môi trường thử.
+
+**2. Dựng Redis.** Trên Render: *New* → *Key Value* → free plan. Copy **Internal URL**
+(dạng `redis://red-xxxx:6379`) — internal nên không tính băng thông và không cần TLS.
+
+**3. Tạo Web Service.** *New* → *Web Service* → *Existing image* →
+`ghcr.io/<user>/<repo>:latest`. Health check path: `/health`. Rồi khai báo biến môi trường:
+
+| Biến | Giá trị |
+| --- | --- |
+| `DATABASE_URL` | connection string Neon |
+| `REDIS_URL` | Internal URL của Key Value ở bước 2 |
+| `JWT_SECRET` | `openssl rand -hex 32` |
+| `PAYMENT_CALLBACK_SECRET` | `openssl rand -hex 32` |
+| `APP_URL` | URL Render cấp, ví dụ `https://store-api.onrender.com` |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | tài khoản admin đầu tiên |
+
+Không cần set `PORT` — Render tự tiêm, `main.ts` đọc từ đó. Bỏ trống nhóm `S3_*` thì
+upload chạy chế độ dev (không lưu file thật); muốn lưu thật thì điền Cloudflare R2.
+
+**4. Nối CD với Render.** Trong service trên Render: *Settings* → *Deploy Hook*, copy URL.
+Trên GitHub repo:
+
+- *Settings* → *Secrets and variables* → *Actions* → **New repository secret**:
+  `RENDER_DEPLOY_HOOK_URL` = URL vừa copy.
+- Tab **Variables** → **New repository variable**:
+  `RENDER_SERVICE_URL` = `https://<tên-service>.onrender.com`.
+
+Xong. Từ giờ mỗi lần CI xanh trên `main`, CD sẽ build image → gọi Deploy Hook → **chờ
+`/health` báo đúng commit vừa build** rồi mới báo xanh. Thiếu secret hay variable thì hai
+bước đó tự bỏ qua chứ không làm đỏ workflow, nên fork hoặc repo chưa cấu hình vẫn chạy CD
+bình thường.
+
+`GIT_SHA` được nướng vào image lúc build và `/health` trả lại nó — đó là cách CD biết bản
+mới đã thực sự lên sóng, thay vì chờ theo thời gian rồi đoán.
+
+```json
+{ "status": "ok", "version": "0816f78...", "uptime": 42 }
+```
+
+Vài điều cần biết về free plan: service **ngủ sau ~15 phút** không có request, lần gọi
+đầu sau đó mất 30–60 giây; image gần **1 GB** nên deploy lần đầu khá lâu; `migrate deploy`
+chạy ở `docker-entrypoint.sh` mỗi lần container khởi động nên schema tự theo kịp code.
+
 ### Docker
 
 ```bash

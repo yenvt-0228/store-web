@@ -9,6 +9,8 @@ import {
   I18nModule,
   QueryResolver,
 } from 'nestjs-i18n';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { CategoryModule } from './category/category.module';
@@ -56,5 +58,7 @@ import { PaymentModule } from './payment/payment.module';
     PaymentModule,
     TasksModule,
   ],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}
