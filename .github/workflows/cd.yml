@@ -104,17 +104,22 @@ jobs:
 
     steps:
       - name: Gọi Deploy Hook
+        id: hook
         env:
           HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
           if [ -z "$HOOK" ]; then
             echo "Chưa cấu hình secret RENDER_DEPLOY_HOOK_URL — bỏ qua bước deploy."
+            echo "called=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           curl -fsS -X POST "$HOOK" > /dev/null
+          echo "called=true" >> "$GITHUB_OUTPUT"
           echo "Đã yêu cầu Render deploy."
 
+      # Không gọi hook thì Render chẳng deploy gì, poll cũng vô nghĩa.
       - name: Chờ bản mới lên sóng
+        if: steps.hook.outputs.called == 'true'
         env:
           BASE_URL: ${{ vars.RENDER_SERVICE_URL }}
           WANT: ${{ needs.image.outputs.sha }}
