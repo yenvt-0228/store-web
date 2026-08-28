@@ -132,12 +132,15 @@ jobs:
           echo "Chờ $BASE_URL/health báo version=$WANT"
 
           # Free tier vừa build vừa đánh thức container nên có thể lâu vài phút.
-          for i in $(seq 1 60); do
-            GOT=$(curl -fsS --max-time 20 "$BASE_URL/health" 2>/dev/null \
+          # --max-time phải lớn hơn thời gian cold start của free tier (đo thực
+          # tế ~50s), nếu không mọi lần poll lúc service đang ngủ đều timeout và
+          # bị ghi nhận sai là "chưa trả lời".
+          for i in $(seq 1 40); do
+            GOT=$(curl -fsS --max-time 90 "$BASE_URL/health" 2>/dev/null \
               | sed -n 's/.*"version":"\([^"]*\)".*/\1/p' || true)
 
             if [ "$GOT" = "$WANT" ]; then
-              echo "Bản mới đã chạy sau $((i * 15))s."
+              echo "Bản mới đã chạy ở lần thử $i."
               exit 0
             fi
 
@@ -145,7 +148,8 @@ jobs:
             sleep 15
           done
 
-          echo "Quá 15 phút mà /health vẫn chưa báo đúng commit — xem log trên Render."
+          echo "Thử 40 lần mà /health vẫn chưa báo đúng commit — xem log trên Render."
+          echo "Kiểm tra biến RENDER_SERVICE_URL có trỏ đúng service API không."
           exit 1
 
       - name: Ghi kết quả ra trang tổng kết
