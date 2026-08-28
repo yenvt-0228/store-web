@@ -3,7 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { I18nValidationPipe } from 'nestjs-i18n';
 import request from 'supertest';
 import type { App } from 'supertest/types';
@@ -50,6 +50,13 @@ export type LoginBody = { user: UserPayload; tokens: TokensPayload };
 export type TokensBody = { tokens: TokensPayload };
 export type MessageBody = { message: string };
 export type ErrorBody = { errors: { body: string[] } };
+
+// Ký callback thanh toán đúng như cổng thật làm, bằng secret dùng chung.
+export function signCallback(transactionId: string, success: boolean): string {
+  return createHmac('sha256', process.env.PAYMENT_CALLBACK_SECRET ?? '')
+    .update(`${transactionId}|${String(success)}`)
+    .digest('hex');
+}
 export type UserListBody = {
   data: UserPayload[];
   meta: { total: number; page: number; limit: number; totalPages: number };
@@ -285,7 +292,7 @@ export async function seedProduct(
 ): Promise<SeededProduct> {
   const categoryId =
     overrides.categoryId ??
-    (await seedCategory(app, `Danh mục ${Date.now()}`)).id;
+    (await seedCategory(app, `Danh mục ${randomBytes(6).toString('hex')}`)).id;
 
   const product = await db(app).product.create({
     data: {
@@ -350,6 +357,7 @@ export interface CartPayload {
     subtotal: number;
     stock: number;
     available: boolean;
+    reason: 'DELETED' | 'INACTIVE' | 'INSUFFICIENT_STOCK' | null;
   }[];
   totalItems: number;
   totalQuantity: number;
@@ -394,8 +402,6 @@ export async function expectOrderInvariants(
   }
 }
 
-/* ----------------------------- ẢNH SẢN PHẨM ----------------------------- */
-
 export async function seedProductImage(
   app: INestApplication,
   productId: string,
@@ -430,13 +436,6 @@ export async function activeImagesOf(app: INestApplication, productId: string) {
   });
 }
 
-/**
- * Bất biến của ảnh: có ảnh đang hoạt động thì phải có ĐÚNG một ảnh chính.
- *
- * DB đã có partial unique index chặn việc có HAI ảnh chính. Chốt còn thiếu là
- * chiều ngược lại — xoá ảnh chính mà không đề bạt ảnh khác sẽ để sản phẩm có
- * ảnh nhưng không ảnh nào là ảnh đại diện, DB không hề chặn.
- */
 export async function expectExactlyOnePrimaryImage(
   app: INestApplication,
   productId: string,

@@ -1,0 +1,12 @@
+{
+  "NOT_FOUND": "Payment transaction not found",
+  "ORDER_CLOSED": "This order has been cancelled or rejected and cannot be paid",
+  "ALREADY_PAID": "This order has already been paid",
+  "ALREADY_PROCESSED": "This transaction has already been processed",
+  "COD_CREATED": "Order recorded. You will pay on delivery",
+  "ONLINE_CREATED": "Please continue to the payment gateway to complete your payment",
+  "SUCCESS": "Payment successful",
+  "FAILED": "Payment failed",
+  "INVALID_SIGNATURE": "Invalid callback signature",
+  "CALLBACK_NOT_CONFIGURED": "Payment callback is not configured"
+}

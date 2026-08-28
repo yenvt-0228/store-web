@@ -2,5 +2,6 @@
   "ITEM_NOT_FOUND": "Sản phẩm này không có trong giỏ hàng",
   "OUT_OF_STOCK": "{name} chỉ còn {stock} sản phẩm trong kho",
   "PRODUCT_UNAVAILABLE": "Sản phẩm không còn được bán",
-  "CLEARED": "Đã xoá toàn bộ giỏ hàng"
+  "CLEARED": "Đã xoá toàn bộ giỏ hàng",
+  "MAX_QUANTITY": "Mỗi sản phẩm chỉ được thêm tối đa {max} cái"
 }

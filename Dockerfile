@@ -16,8 +16,11 @@ RUN npx prisma generate && npm run build
 FROM node:22-slim AS runtime
 WORKDIR /app
 
+ARG GIT_SHA=unknown
+
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV GIT_SHA=$GIT_SHA
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \

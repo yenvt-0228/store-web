@@ -97,6 +97,7 @@ jobs:
           EMAIL_VERIFICATION_TTL_HOURS=24
           PASSWORD_RESET_TTL_MINUTES=60
           MAIL_QUEUE_ENABLED=false
+          PAYMENT_CALLBACK_SECRET=ci-callback-secret
           SMTP_HOST=
           REDIS_HOST=127.0.0.1
           REDIS_PORT=6379

@@ -1,0 +1,13 @@
+{
+  "NOT_FOUND": "Không tìm thấy đơn hàng",
+  "FORBIDDEN": "Đơn hàng này không phải của bạn",
+  "EMPTY_ITEMS": "Giỏ hàng đang trống, không có gì để đặt",
+  "OUT_OF_STOCK": "{name} không còn đủ hàng trong kho",
+  "CANNOT_CANCEL": "Chỉ huỷ được đơn khi đơn còn đang chờ xác nhận",
+  "CANCELLED_BY_USER": "Khách hàng tự huỷ",
+  "SAME_STATUS": "Đơn hàng đang ở đúng trạng thái này",
+  "INVALID_TRANSITION": "Không thể chuyển đơn hàng từ {from} sang {to}",
+  "REASON_REQUIRED": "Phải có lý do khi từ chối hoặc huỷ đơn hàng",
+  "UNAVAILABLE_ITEMS": "Những sản phẩm sau không còn được bán, vui lòng bỏ khỏi giỏ hàng: {names}",
+  "INSUFFICIENT_STOCK_ITEMS": "Không đủ hàng để đặt, vui lòng giảm số lượng. Số lượng còn lại: {items}"
+}

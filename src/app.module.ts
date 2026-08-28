@@ -9,6 +9,8 @@ import {
   I18nModule,
   QueryResolver,
 } from 'nestjs-i18n';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { CategoryModule } from './category/category.module';
@@ -20,6 +22,8 @@ import { UploadModule } from './upload/upload.module';
 import { UserModule } from './user/user.module';
 import { ProductModule } from './product/product.module';
 import { CartModule } from './cart/cart.module';
+import { OrderModule } from './order/order.module';
+import { PaymentModule } from './payment/payment.module';
 
 @Module({
   imports: [
@@ -50,7 +54,11 @@ import { CartModule } from './cart/cart.module';
     ProductModule,
     UploadModule,
     CartModule,
+    OrderModule,
+    PaymentModule,
     TasksModule,
   ],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}

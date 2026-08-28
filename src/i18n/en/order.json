@@ -1,0 +1,13 @@
+{
+  "NOT_FOUND": "Order not found",
+  "FORBIDDEN": "This order does not belong to you",
+  "EMPTY_ITEMS": "Your cart is empty, there is nothing to order",
+  "OUT_OF_STOCK": "{name} does not have enough stock left",
+  "CANNOT_CANCEL": "Order can only be cancelled while it is still awaiting confirmation",
+  "CANCELLED_BY_USER": "Cancelled by customer",
+  "SAME_STATUS": "Order is already in this status",
+  "INVALID_TRANSITION": "Cannot change order status from {from} to {to}",
+  "REASON_REQUIRED": "A reason is required when rejecting or cancelling an order",
+  "UNAVAILABLE_ITEMS": "These products are no longer sold, please remove them from your cart: {names}",
+  "INSUFFICIENT_STOCK_ITEMS": "Not enough stock, please reduce the quantity. Remaining stock: {items}"
+}

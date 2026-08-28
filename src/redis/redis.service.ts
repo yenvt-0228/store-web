@@ -8,15 +8,28 @@ export class RedisService implements OnModuleDestroy {
   readonly client: Redis;
 
   constructor(private config: ConfigService) {
-    this.client = new Redis({
-      host: this.config.get<string>('REDIS_HOST') ?? '127.0.0.1',
-      port: Number(this.config.get<string>('REDIS_PORT') ?? 6379),
-      password: this.config.get<string>('REDIS_PASSWORD') || undefined,
-      db: Number(this.config.get<string>('REDIS_DB') ?? 0),
+    const options = {
       lazyConnect: true,
-      retryStrategy: (times) => (times > 3 ? null : times * 200),
+      retryStrategy: (times: number) => (times > 3 ? null : times * 200),
       maxRetriesPerRequest: 2,
-    });
+      // ioredis mặc định family: 4, nhưng mạng nội bộ của Render (redis://red-xxx)
+      // chỉ phân giải ra IPv6 — để 0 cho Node tự chọn IPv4 hoặc IPv6.
+      family: 0,
+    };
+
+    // Nhà cung cấp managed thường chỉ đưa một URL. Dùng rediss:// thì ioredis
+    // tự bật TLS, khỏi phải cấu hình thêm.
+    const url = this.config.get<string>('REDIS_URL');
+
+    this.client = url
+      ? new Redis(url, options)
+      : new Redis({
+          ...options,
+          host: this.config.get<string>('REDIS_HOST') ?? '127.0.0.1',
+          port: Number(this.config.get<string>('REDIS_PORT') ?? 6379),
+          password: this.config.get<string>('REDIS_PASSWORD') || undefined,
+          db: Number(this.config.get<string>('REDIS_DB') ?? 0),
+        });
 
     this.client.on('error', (error: Error) => {
       this.logger.warn(`Redis lỗi: ${error.message}`);

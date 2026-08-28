@@ -1,13 +1,16 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { I18nService } from 'nestjs-i18n';
 import { multiply, sum, toNumber } from '../common/utils/money.util';
 import { ProductStatus } from '../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { CartItemIssue, MAX_QUANTITY_PER_ITEM } from './cart.constant';
 import { AddCartItemDto } from './dto/add-cart-item.dto';
 
 export interface CartItemView {
@@ -18,6 +21,7 @@ export interface CartItemView {
   subtotal: number;
   stock: number;
   available: boolean;
+  reason: CartItemIssue | null;
 }
 
 export interface CartView {
@@ -27,9 +31,24 @@ export interface CartView {
   totalAmount: number;
 }
 
+// Cộng dồn + kiểm hạn mức + đặt TTL trong một lệnh nguyên tử.
+// Trả về [1, tổng mới] nếu đã ghi, [0, tổng bị từ chối] nếu vượt hạn mức.
+const ADD_ITEM_SCRIPT = `
+local current = tonumber(redis.call('HGET', KEYS[1], ARGV[1]) or '0')
+local desired = current + tonumber(ARGV[2])
+if desired > tonumber(ARGV[3]) then
+  return {0, desired}
+end
+redis.call('HSET', KEYS[1], ARGV[1], desired)
+redis.call('EXPIRE', KEYS[1], ARGV[4])
+return {1, desired}
+`;
+
 @Injectable()
 export class CartService {
   private static readonly TTL_SECONDS = 30 * 24 * 60 * 60;
+
+  private readonly logger = new Logger(CartService.name);
 
   constructor(
     private redis: RedisService,
@@ -48,21 +67,50 @@ export class CartService {
 
   async getCart(userId: string): Promise<CartView> {
     const client = await this.client();
-    const raw = await client.hgetall(this.key(userId));
-    return this.buildView(raw);
+    const key = this.key(userId);
+
+    const results = await client
+      .pipeline()
+      .hgetall(key)
+      .expire(key, CartService.TTL_SECONDS)
+      .exec();
+
+    const read = results?.[0];
+    const touch = results?.[1];
+
+    if (!read || read[0]) {
+      throw new ServiceUnavailableException(read?.[0]?.message);
+    }
+
+    if (touch?.[0]) {
+      this.logger.warn(
+        `Không gia hạn được TTL cho ${key}: ${touch[0].message}`,
+      );
+    }
+
+    return this.buildView(read[1] as Record<string, string>);
   }
 
   async addItem(userId: string, dto: AddCartItemDto): Promise<CartView> {
     const client = await this.client();
     const key = this.key(userId);
 
-    const current = Number((await client.hget(key, dto.productId)) ?? 0);
-    const desired = current + dto.quantity;
+    const product = await this.findPurchasable(dto.productId);
+    const limit = Math.min(product.quantity, MAX_QUANTITY_PER_ITEM);
 
-    await this.assertPurchasable(dto.productId, desired);
+    const [applied, desired] = (await client.eval(
+      ADD_ITEM_SCRIPT,
+      1,
+      key,
+      dto.productId,
+      dto.quantity,
+      limit,
+      CartService.TTL_SECONDS,
+    )) as [number, number];
 
-    await client.hset(key, dto.productId, desired);
-    await client.expire(key, CartService.TTL_SECONDS);
+    if (!applied) {
+      throw this.limitError(product, desired);
+    }
 
     return this.getCart(userId);
   }
@@ -80,10 +128,22 @@ export class CartService {
       throw new NotFoundException(this.i18n.t('cart.ITEM_NOT_FOUND'));
     }
 
-    await this.assertPurchasable(productId, quantity);
+    const product = await this.findPurchasable(productId);
+    if (quantity > product.quantity) {
+      throw this.limitError(product, quantity);
+    }
 
-    await client.hset(key, productId, quantity);
-    await client.expire(key, CartService.TTL_SECONDS);
+    const failure = CartService.firstError(
+      await client
+        .multi()
+        .hset(key, productId, quantity)
+        .expire(key, CartService.TTL_SECONDS)
+        .exec(),
+    );
+
+    if (failure) {
+      throw new ServiceUnavailableException(failure.message);
+    }
 
     return this.getCart(userId);
   }
@@ -103,13 +163,65 @@ export class CartService {
     return { message: this.i18n.t('cart.CLEARED') };
   }
 
-  async removeItems(userId: string, productIds: string[]): Promise<void> {
-    if (productIds.length === 0) return;
-    const client = await this.client();
-    await client.hdel(this.key(userId), ...productIds);
+  async removeItems(userId: string, productIds: string[]): Promise<boolean> {
+    if (productIds.length === 0) return true;
+
+    const key = this.key(userId);
+
+    try {
+      const client = await this.client();
+      const failure = CartService.firstError(
+        await client
+          .multi()
+          .hdel(key, ...productIds)
+          .expire(key, CartService.TTL_SECONDS)
+          .exec(),
+      );
+
+      if (failure) {
+        throw failure;
+      }
+
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Không xoá được ${productIds.length} sản phẩm khỏi ${key}: ` +
+          (error instanceof Error ? error.message : String(error)),
+      );
+      return false;
+    }
   }
 
-  private async assertPurchasable(productId: string, quantity: number) {
+  private static firstError(
+    results: [Error | null, unknown][] | null,
+  ): Error | null {
+    if (!results) {
+      return new Error('Redis huỷ khối multi(), không có kết quả nào');
+    }
+
+    return results.find(([error]) => error !== null)?.[0] ?? null;
+  }
+
+  private limitError(
+    product: { name: string; quantity: number },
+    desired: number,
+  ) {
+    if (desired > MAX_QUANTITY_PER_ITEM) {
+      return new BadRequestException(
+        this.i18n.t('cart.MAX_QUANTITY', {
+          args: { max: MAX_QUANTITY_PER_ITEM },
+        }),
+      );
+    }
+
+    return new BadRequestException(
+      this.i18n.t('cart.OUT_OF_STOCK', {
+        args: { name: product.name, stock: product.quantity },
+      }),
+    );
+  }
+
+  private async findPurchasable(productId: string) {
     const product = await this.prisma.product.findFirst({
       where: { id: productId, status: ProductStatus.ACTIVE, deletedAt: null },
     });
@@ -117,13 +229,21 @@ export class CartService {
     if (!product) {
       throw new NotFoundException(this.i18n.t('product.NOT_FOUND'));
     }
-    if (product.quantity < quantity) {
-      throw new BadRequestException(
-        this.i18n.t('cart.OUT_OF_STOCK', {
-          args: { name: product.name, stock: product.quantity },
-        }),
-      );
+
+    return product;
+  }
+
+  private issueOf(
+    product: { status: ProductStatus; quantity: number },
+    quantity: number,
+  ): CartItemIssue | null {
+    if (product.status !== ProductStatus.ACTIVE) {
+      return CartItemIssue.INACTIVE;
     }
+    if (product.quantity < quantity) {
+      return CartItemIssue.INSUFFICIENT_STOCK;
+    }
+    return null;
   }
 
   private async buildView(raw: Record<string, string>): Promise<CartView> {
@@ -150,8 +270,11 @@ export class CartService {
           subtotal: 0,
           stock: 0,
           available: false,
+          reason: CartItemIssue.DELETED,
         };
       }
+
+      const reason = this.issueOf(product, quantity);
 
       return {
         productId,
@@ -160,9 +283,8 @@ export class CartService {
         quantity,
         subtotal: toNumber(multiply(product.price, quantity)),
         stock: product.quantity,
-        available:
-          product.status === ProductStatus.ACTIVE &&
-          product.quantity >= quantity,
+        available: reason === null,
+        reason,
       };
     });
 
