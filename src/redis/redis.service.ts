@@ -12,6 +12,9 @@ export class RedisService implements OnModuleDestroy {
       lazyConnect: true,
       retryStrategy: (times: number) => (times > 3 ? null : times * 200),
       maxRetriesPerRequest: 2,
+      // ioredis mặc định family: 4, nhưng mạng nội bộ của Render (redis://red-xxx)
+      // chỉ phân giải ra IPv6 — để 0 cho Node tự chọn IPv4 hoặc IPv6.
+      family: 0,
     };
 
     // Nhà cung cấp managed thường chỉ đưa một URL. Dùng rediss:// thì ioredis

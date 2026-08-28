@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -27,6 +28,8 @@ import { orderInclude, toOrderResponse } from './dto/order-response.dto';
 
 @Injectable()
 export class OrderService {
+  private readonly logger = new Logger(OrderService.name);
+
   constructor(
     private prisma: PrismaService,
     private cart: CartService,
@@ -89,10 +92,15 @@ export class OrderService {
     });
 
     if (!dto.items?.length) {
-      await this.cart.removeItems(
-        userId,
-        orderItems.map((item) => item.productId),
-      );
+      const productIds = orderItems.map((item) => item.productId);
+      const cleared = await this.cart.removeItems(userId, productIds);
+
+      if (!cleared) {
+        this.logger.error(
+          `Đơn ${order.orderCode} đã tạo nhưng chưa dọn được giỏ của user ` +
+            `${userId} — còn lại: ${productIds.join(', ')}`,
+        );
+      }
     }
 
     const recipient = await this.prisma.user.findUniqueOrThrow({

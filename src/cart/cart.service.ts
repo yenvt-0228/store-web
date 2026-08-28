@@ -133,11 +133,17 @@ export class CartService {
       throw this.limitError(product, quantity);
     }
 
-    await client
-      .multi()
-      .hset(key, productId, quantity)
-      .expire(key, CartService.TTL_SECONDS)
-      .exec();
+    const failure = CartService.firstError(
+      await client
+        .multi()
+        .hset(key, productId, quantity)
+        .expire(key, CartService.TTL_SECONDS)
+        .exec(),
+    );
+
+    if (failure) {
+      throw new ServiceUnavailableException(failure.message);
+    }
 
     return this.getCart(userId);
   }
@@ -157,17 +163,43 @@ export class CartService {
     return { message: this.i18n.t('cart.CLEARED') };
   }
 
-  async removeItems(userId: string, productIds: string[]): Promise<void> {
-    if (productIds.length === 0) return;
+  async removeItems(userId: string, productIds: string[]): Promise<boolean> {
+    if (productIds.length === 0) return true;
 
-    const client = await this.client();
     const key = this.key(userId);
 
-    await client
-      .multi()
-      .hdel(key, ...productIds)
-      .expire(key, CartService.TTL_SECONDS)
-      .exec();
+    try {
+      const client = await this.client();
+      const failure = CartService.firstError(
+        await client
+          .multi()
+          .hdel(key, ...productIds)
+          .expire(key, CartService.TTL_SECONDS)
+          .exec(),
+      );
+
+      if (failure) {
+        throw failure;
+      }
+
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Không xoá được ${productIds.length} sản phẩm khỏi ${key}: ` +
+          (error instanceof Error ? error.message : String(error)),
+      );
+      return false;
+    }
+  }
+
+  private static firstError(
+    results: [Error | null, unknown][] | null,
+  ): Error | null {
+    if (!results) {
+      return new Error('Redis huỷ khối multi(), không có kết quả nào');
+    }
+
+    return results.find(([error]) => error !== null)?.[0] ?? null;
   }
 
   private limitError(
