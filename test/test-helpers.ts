@@ -8,12 +8,14 @@ import { I18nValidationPipe } from 'nestjs-i18n';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
+import { GoogleAuthService } from '../src/auth/google-auth.service';
 import type { Locale } from '../src/common/constants/locale.constant';
 import { DEFAULT_LOCALE } from '../src/common/constants/locale.constant';
 import { RoleName } from '../src/common/constants/role.constant';
 import { MailEvent } from '../src/common/events/mail.event';
 import { OrderEvent } from '../src/common/events/order.event';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
+import { PrismaExceptionFilter } from '../src/common/filters/prisma-exception.filter';
 import { ValidationExceptionFilter } from '../src/common/filters/validation-exception.filter';
 import {
   ImageEntityType,
@@ -70,10 +72,23 @@ export function http(app: INestApplication) {
   return request(app.getHttpServer() as App);
 }
 
-export async function createTestApp(): Promise<INestApplication> {
-  const moduleFixture: TestingModule = await Test.createTestingModule({
-    imports: [AppModule],
-  }).compile();
+export interface TestAppOverrides {
+  // Thay GoogleAuthService để test không gọi ra Google thật.
+  google?: Pick<GoogleAuthService, 'verifyIdToken'>;
+}
+
+export async function createTestApp(
+  overrides: TestAppOverrides = {},
+): Promise<INestApplication> {
+  let builder = Test.createTestingModule({ imports: [AppModule] });
+
+  if (overrides.google) {
+    builder = builder
+      .overrideProvider(GoogleAuthService)
+      .useValue(overrides.google);
+  }
+
+  const moduleFixture: TestingModule = await builder.compile();
 
   const app = moduleFixture.createNestApplication();
   app.useGlobalPipes(
@@ -83,6 +98,7 @@ export async function createTestApp(): Promise<INestApplication> {
   app.useGlobalFilters(
     new HttpExceptionFilter(),
     new ValidationExceptionFilter({ detailedErrors: false }),
+    new PrismaExceptionFilter(),
   );
   await app.init();
   return app;

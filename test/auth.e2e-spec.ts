@@ -45,6 +45,19 @@ describe('Auth flow (e2e)', () => {
     await app.close();
   });
 
+  it('nhiều request đăng ký cùng email chạy song song -> 409, không có 500', async () => {
+    const responses = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        http(app).post('/auth/register').send(creds),
+      ),
+    );
+
+    const statuses = responses.map((res) => res.status);
+    expect(statuses.filter((code) => code === 201)).toHaveLength(1);
+    expect(statuses.filter((code) => code === 409)).toHaveLength(7);
+    expect(await db(app).user.count()).toBe(1);
+  });
+
   it('POST /auth/register -> 201, tài khoản CHƯA kích hoạt + gán role USER', async () => {
     const res = await http(app).post('/auth/register').send(creds).expect(201);
 

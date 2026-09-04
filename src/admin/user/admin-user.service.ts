@@ -17,6 +17,7 @@ import { userWithRolesInclude } from '../../common/types/user-with-roles';
 import { Prisma } from '../../generated/prisma/client';
 import { UserStatus } from '../../generated/prisma/enums';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AdminUpdateUserDto } from './dto/admin-update-user.dto';
 import { ListUserDto } from './dto/list-user.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 
@@ -49,6 +50,18 @@ export class AdminUserService {
 
   async findOne(id: string): Promise<UserResponseDto> {
     return toUserResponse(await this.getUserOrFail(id));
+  }
+
+  async update(id: string, dto: AdminUpdateUserDto): Promise<UserResponseDto> {
+    await this.getUserOrFail(id);
+
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data: dto, // DTO đã lọc field lạ (whitelist ở I18nValidationPipe)
+      include: userWithRolesInclude,
+    });
+
+    return toUserResponse(updated);
   }
 
   async updateStatus(

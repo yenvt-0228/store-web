@@ -16,6 +16,7 @@ import { RoleName } from '../../common/constants/role.constant';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { AdminUserService } from './admin-user.service';
+import { AdminUpdateUserDto } from './dto/admin-update-user.dto';
 import { ListUserDto } from './dto/list-user.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 
@@ -39,6 +40,17 @@ export class AdminUserController {
   @Get(':id')
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return { user: await this.adminUserService.findOne(id) };
+  }
+
+  @ApiOperation({
+    summary: 'Sửa thông tin user (không đổi được email và mật khẩu)',
+  })
+  @Patch(':id')
+  async update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AdminUpdateUserDto,
+  ) {
+    return { user: await this.adminUserService.update(id, dto) };
   }
 
   @ApiOperation({ summary: 'Kích hoạt / khóa tài khoản user' })

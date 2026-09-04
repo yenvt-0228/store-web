@@ -1,0 +1,6 @@
+{
+  "ALREADY_EXISTS": "Dữ liệu đã tồn tại",
+  "NOT_FOUND": "Không tìm thấy dữ liệu",
+  "INVALID_REFERENCE": "Dữ liệu tham chiếu không hợp lệ",
+  "INTERNAL_ERROR": "Có lỗi xảy ra, vui lòng thử lại"
+}
