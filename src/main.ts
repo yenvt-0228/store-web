@@ -6,6 +6,7 @@ import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { I18nValidationPipe } from 'nestjs-i18n';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import { ValidationExceptionFilter } from './common/filters/validation-exception.filter';
 
 async function bootstrap() {
@@ -21,9 +22,11 @@ async function bootstrap() {
 
   // HttpExceptionFilter: cho 401/403/404/409...
   // ValidationExceptionFilter: cho lỗi validation (kèm dịch i18n)
+  // PrismaExceptionFilter: lỗi database lọt lưới (P2002 unique, P2025 not found)
   app.useGlobalFilters(
     new HttpExceptionFilter(),
     new ValidationExceptionFilter({ detailedErrors: false }),
+    new PrismaExceptionFilter(),
   );
 
   // Cấu hình Swagger — trang tài liệu API

@@ -54,6 +54,11 @@ export class UserService {
   ): Promise<{ message: string }> {
     const user = await this.getUserOrFail(userId);
 
+    // Tài khoản đăng nhập bằng Google chưa có mật khẩu
+    if (!user.password) {
+      throw new BadRequestException(this.i18n.t('auth.NO_PASSWORD_SET'));
+    }
+
     if (!(await bcrypt.compare(dto.oldPassword, user.password))) {
       throw new BadRequestException(this.i18n.t('user.WRONG_OLD_PASSWORD'));
     }

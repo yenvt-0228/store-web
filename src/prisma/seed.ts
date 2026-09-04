@@ -23,7 +23,11 @@ async function main() {
   }
   console.log(`Đã seed ${ROLES.length} role`);
 
-  const email = process.env.ADMIN_EMAIL ?? 'admin@store-web.local';
+  // Hạ chữ giống @NormalizeEmail ở DTO, nếu không thì ADMIN_EMAIL viết hoa
+  // sẽ tạo ra một hàng mà chính /auth/login không tìm lại được.
+  const email = (
+    process.env.ADMIN_EMAIL ?? 'admin@store-web.local'
+  ).toLowerCase();
   const password = process.env.ADMIN_PASSWORD ?? 'admin123';
 
   const admin = await prisma.user.upsert({

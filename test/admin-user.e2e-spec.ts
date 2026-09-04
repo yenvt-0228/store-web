@@ -43,6 +43,58 @@ describe('Admin user management (e2e)', () => {
     await app.close();
   });
 
+  describe('PATCH /admin/users/:id', () => {
+    it('admin sửa được thông tin cơ bản của user', async () => {
+      const res = await http(app)
+        .patch(`/admin/users/${member.id}`)
+        .set(auth(admin.accessToken))
+        .send({ name: 'Tên mới', phone: '0912345678', address: 'Hà Nội' })
+        .expect(200);
+
+      const { user } = body<UserBody>(res);
+      expect(user.name).toBe('Tên mới');
+      expect(user.phone).toBe('0912345678');
+      expect(user.address).toBe('Hà Nội');
+    });
+
+    it('không đổi được email và mật khẩu qua endpoint này', async () => {
+      await http(app)
+        .patch(`/admin/users/${member.id}`)
+        .set(auth(admin.accessToken))
+        .send({
+          name: 'Tên mới',
+          email: 'chiem-doat@example.com',
+          password: 'hacked123',
+        })
+        .expect(200);
+
+      const row = await db(app).user.findUnique({ where: { id: member.id } });
+      expect(row?.email).toBe('member@example.com');
+
+      // mật khẩu cũ vẫn đăng nhập được -> password trong body đã bị bỏ qua
+      await http(app)
+        .post('/auth/login')
+        .send({ email: member.email, password: member.password })
+        .expect(200);
+    });
+
+    it('user thường gọi vào -> 403', async () => {
+      await http(app)
+        .patch(`/admin/users/${admin.id}`)
+        .set(auth(member.accessToken))
+        .send({ name: 'Đổi trộm' })
+        .expect(403);
+    });
+
+    it('id không tồn tại -> 404', async () => {
+      await http(app)
+        .patch('/admin/users/00000000-0000-4000-8000-000000000000')
+        .set(auth(admin.accessToken))
+        .send({ name: 'Ai đó' })
+        .expect(404);
+    });
+  });
+
   it('GET /admin/users bằng token USER -> 403', async () => {
     await http(app)
       .get('/admin/users')
