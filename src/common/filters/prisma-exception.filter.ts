@@ -22,6 +22,9 @@ export class PrismaExceptionFilter implements ExceptionFilter {
     switch (exception.code) {
       // Ghi trùng giá trị của cột @unique.
       case 'P2002':
+        this.logger.warn(`Lỗi Prisma ${exception.code}`, {
+          meta: exception.meta,
+        });
         return this.send(
           res,
           HttpStatus.CONFLICT,
@@ -29,6 +32,9 @@ export class PrismaExceptionFilter implements ExceptionFilter {
         );
 
       case 'P2025':
+        this.logger.debug(`Lỗi Prisma ${exception.code}`, {
+          meta: exception.meta,
+        });
         return this.send(
           res,
           HttpStatus.NOT_FOUND,
@@ -36,6 +42,9 @@ export class PrismaExceptionFilter implements ExceptionFilter {
         );
 
       case 'P2003':
+        this.logger.warn(`Lỗi Prisma ${exception.code}`, {
+          meta: exception.meta,
+        });
         return this.send(
           res,
           HttpStatus.BAD_REQUEST,
@@ -43,9 +52,13 @@ export class PrismaExceptionFilter implements ExceptionFilter {
         );
 
       default:
-        this.logger.error(
-          `Lỗi Prisma chưa xử lý: ${exception.code} — ${exception.message}`,
-        );
+        // exception.message chứa nguyên câu query kèm giá trị tham số (có thể
+        // là email, số điện thoại, token...) nên không log trực tiếp — chỉ
+        // log code + meta, đủ để chẩn đoán mà không lộ PII.
+        this.logger.error(`Lỗi Prisma chưa xử lý: ${exception.code}`, {
+          meta: exception.meta,
+          clientVersion: exception.clientVersion,
+        });
         return this.send(
           res,
           HttpStatus.INTERNAL_SERVER_ERROR,

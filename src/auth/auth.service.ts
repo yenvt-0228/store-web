@@ -15,6 +15,7 @@ import {
   UserResponseDto,
 } from '../common/dto/user-response.dto';
 import {
+  GoogleLinkedEvent,
   MailEvent,
   PasswordResetRequestedEvent,
   UserRegisteredEvent,
@@ -239,8 +240,12 @@ export class AuthService {
       return this.createGoogleUser(profile);
     }
 
-    if (existing.googleId) {
+    if (existing.googleId === profile.googleId) {
       return existing;
+    }
+
+    if (existing.googleId) {
+      throw new ConflictException(this.i18n.t('auth.GOOGLE_ALREADY_LINKED'));
     }
 
     return this.linkGoogleToExistingUser(existing, profile);
@@ -289,7 +294,7 @@ export class AuthService {
     }
   }
 
-  private linkGoogleToExistingUser(
+  private async linkGoogleToExistingUser(
     existing: UserWithRoles,
     profile: GoogleProfile,
   ): Promise<UserWithRoles> {
@@ -297,16 +302,28 @@ export class AuthService {
       throw new ForbiddenException(this.i18n.t('auth.ACCOUNT_INACTIVE'));
     }
 
-    return this.prisma.user.update({
+    const passwordCleared = !existing.isVerified;
+
+    const updated = await this.prisma.user.update({
       where: { id: existing.id },
       data: {
         googleId: profile.googleId,
         isVerified: true,
         avatar: existing.avatar ?? profile.avatar,
-        ...(existing.isVerified ? {} : { password: null }),
+        name: existing.name || profile.name,
+        ...(passwordCleared ? { password: null } : {}),
       },
       include: userWithRolesInclude,
     });
+
+    this.events.emit(MailEvent.GOOGLE_LINKED, {
+      email: updated.email,
+      name: updated.name,
+      passwordCleared,
+      locale: toLocale(updated.locale),
+    } satisfies GoogleLinkedEvent);
+
+    return updated;
   }
 
   private assertUserCanLogin(user: UserWithRoles): void {

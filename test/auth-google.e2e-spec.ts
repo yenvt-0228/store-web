@@ -134,6 +134,20 @@ describe('Google login (e2e)', () => {
       .expect(200);
   });
 
+  it('email trùng nhưng đã gắn với googleId KHÁC -> 409, không ghi đè liên kết', async () => {
+    const local = await seedUser(app, { email: profile.email });
+    await db(app).user.update({
+      where: { id: local.id },
+      data: { googleId: 'some-other-google-sub' },
+    });
+
+    const res = await login().expect(409);
+    expect(body<ErrorBody>(res).errors.body.length).toBeGreaterThan(0);
+
+    const row = await db(app).user.findUnique({ where: { id: local.id } });
+    expect(row?.googleId).toBe('some-other-google-sub');
+  });
+
   it('email đăng ký khác hoa thường vẫn liên kết đúng, không tạo tài khoản thứ hai', async () => {
     await http(app)
       .post('/auth/register')

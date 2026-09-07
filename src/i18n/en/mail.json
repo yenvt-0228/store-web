@@ -15,6 +15,10 @@
   "PASSWORD_CHANGED_BODY": "The password for your account has just been changed.",
   "PASSWORD_CHANGED_WARNING": "If this was not you, please contact us immediately.",
 
+  "GOOGLE_LINKED_SUBJECT": "Your account has been linked to Google",
+  "GOOGLE_LINKED_BODY": "Your account has just been linked to a Google sign-in.",
+  "GOOGLE_LINKED_WARNING": "If this was not you, please contact us immediately.",
+
   "ORDER_CREATED_SUBJECT": "Order {orderCode} received",
   "ORDER_CREATED_BODY": "We have received your order <b>{orderCode}</b> for a total of <b>{money}</b>.",
   "ORDER_CREATED_NOTE": "It is awaiting confirmation and we will get back to you shortly.",

@@ -15,6 +15,10 @@
   "PASSWORD_CHANGED_BODY": "Mật khẩu tài khoản của bạn vừa được thay đổi.",
   "PASSWORD_CHANGED_WARNING": "Nếu không phải bạn thực hiện, hãy liên hệ ngay với chúng tôi.",
 
+  "GOOGLE_LINKED_SUBJECT": "Tài khoản của bạn vừa được liên kết với Google",
+  "GOOGLE_LINKED_BODY": "Tài khoản của bạn vừa được liên kết với đăng nhập Google.",
+  "GOOGLE_LINKED_WARNING": "Nếu không phải bạn thực hiện, hãy liên hệ ngay với chúng tôi.",
+
   "ORDER_CREATED_SUBJECT": "Đã nhận đơn hàng {orderCode}",
   "ORDER_CREATED_BODY": "Chúng tôi đã nhận đơn hàng <b>{orderCode}</b> với tổng tiền <b>{money}</b>.",
   "ORDER_CREATED_NOTE": "Đơn đang chờ xác nhận, chúng tôi sẽ báo lại sớm.",

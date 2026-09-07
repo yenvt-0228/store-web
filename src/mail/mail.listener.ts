@@ -10,6 +10,7 @@ import type {
 import { OrderEvent } from '../common/events/order.event';
 
 import type {
+  GoogleLinkedEvent,
   PasswordChangedEvent,
   PasswordResetRequestedEvent,
   UserRegisteredEvent,
@@ -58,6 +59,13 @@ export class MailListener {
   async onPasswordChanged(event: PasswordChangedEvent): Promise<void> {
     await this.dispatcher.dispatch(
       this.renderer.passwordChanged(event.email, event.name, event.locale),
+    );
+  }
+
+  @OnEvent(MailEvent.GOOGLE_LINKED)
+  async onGoogleLinked(event: GoogleLinkedEvent): Promise<void> {
+    await this.dispatcher.dispatch(
+      this.renderer.googleLinked(event.email, event.name, event.locale),
     );
   }
 
