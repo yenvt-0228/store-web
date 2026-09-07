@@ -1,0 +1,6 @@
+{
+  "ALREADY_EXISTS": "This record already exists",
+  "NOT_FOUND": "Record not found",
+  "INVALID_REFERENCE": "Referenced record does not exist",
+  "INTERNAL_ERROR": "Something went wrong, please try again"
+}

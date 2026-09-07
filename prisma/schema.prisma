@@ -20,7 +20,8 @@ model User {
   id       String  @id @default(uuid(7)) @db.Uuid
   name     String  @db.VarChar(255)
   email    String  @unique @db.VarChar(255)
-  password String  @db.VarChar(255) // luôn là chuỗi bcrypt
+  password String?  @db.VarChar(255)
+  googleId String? @unique @map("google_id") @db.VarChar(255)
   phone    String? @db.VarChar(20)
   address  String? @db.VarChar(255)
   avatar   String? @db.VarChar(500)

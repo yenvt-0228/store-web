@@ -112,6 +112,15 @@ export class MailRenderer {
     });
   }
 
+  googleLinked(to: string, name: string, lang: Locale): MailPayload {
+    return this.render('google-linked', {
+      to,
+      name,
+      lang,
+      subjectKey: 'mail.GOOGLE_LINKED_SUBJECT',
+    });
+  }
+
   /*  ĐƠN HÀNG  */
 
   orderCreated(

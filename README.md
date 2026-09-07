@@ -22,14 +22,93 @@ Tài liệu Swagger: `http://localhost:3001/docs`
 
 | Nhóm | Endpoint |
 | --- | --- |
-| Auth | `POST /auth/register` · `GET /auth/activate` · `POST /auth/login` · `refresh` · `logout` · `forgot-password` · `reset-password` |
+| Auth | `POST /auth/register` · `GET /auth/activate` · `POST /auth/login` · `POST /auth/google` · `refresh` · `logout` · `forgot-password` · `reset-password` |
 | User | `GET/PATCH /users/me` · `PATCH /users/me/password` |
 | Sản phẩm (khách) | `GET /products` · `GET /products/featured` · `GET /products/:id` |
 | Upload ảnh | `POST /admin/uploads/images` (admin, ≤10 file) · `POST /uploads/avatar` |
 | Giỏ hàng | `GET /cart` · `POST /cart/items` · `PATCH /cart/items/:id` · `DELETE /cart/items/:id` · `DELETE /cart` |
 | Đơn hàng | `POST /orders` · `GET /orders` · `GET /orders/:id` · `PATCH /orders/:id/cancel` |
 | Thanh toán | `POST /payments` · `POST /payments/mock-callback` · `GET /payments/:orderId` |
-| Admin | `/admin/users` · `/admin/categories` · `/admin/products` (kèm `/:id/images`) · `/admin/orders` |
+| Admin | `/admin/users` (kèm `PATCH /:id` · `PATCH /:id/status`) · `/admin/categories` · `/admin/products` (kèm `/:id/images`) · `/admin/orders` |
+
+### Lỗi database không lọt ra thành 500
+
+Cả repo đi theo mẫu **kiểm tra rồi mới ghi** (`findUnique` xem email đã tồn tại chưa, rồi
+mới `create`). Giữa hai bước đó có khe hở: hai request song song cùng đọc thấy "chưa có",
+cùng đi tiếp, và **unique index của database mới là thứ chặn thật**. Lỗi Prisma ném ra
+lúc đó không phải `HttpException` nên `HttpExceptionFilter` không bắt, nó rơi xuống
+handler mặc định của Nest và client nhận **500**.
+
+Đo thử bằng 8 request `POST /auth/register` cùng email chạy song song: **7/8 trả 500**.
+
+`PrismaExceptionFilter` dịch mã lỗi Prisma sang HTTP status:
+
+| Mã | HTTP | Khi nào |
+| --- | --- | --- |
+| `P2002` | 409 | ghi trùng giá trị cột `@unique` |
+| `P2025` | 404 | `update`/`delete` nhắm vào bản ghi không còn |
+| `P2003` | 400 | khoá ngoại trỏ tới bản ghi không có thật |
+| khác | 500 | vẫn 500, nhưng log lại mã để còn lần ra |
+
+Filter đứng ở **tầng cuối**: service nào đã tự tiền kiểm và ném `ConflictException` thì
+không chạm tới nó — filter chỉ đỡ những gì lọt lưới. Nhờ vậy không phải đi vá từng
+service, và chỗ nào quên tiền kiểm cũng tự động trả đúng mã.
+
+### Admin sửa thông tin user
+
+`PATCH /admin/users/:id` dùng `AdminUpdateUserDto`, lấy đúng bốn field mà chính người dùng
+tự sửa được (`PickType` từ `UpdateProfileDto`): `name`, `phone`, `address`, `locale`.
+
+**Cố ý không có `email` và `password`.** Đổi `email` là chiếm danh tính — và còn phá phần
+liên kết Google, vì đổi sang email người khác rồi đăng nhập Google bằng email đó là vào
+được tài khoản của họ. Đổi `password` ở đây thì đi vòng qua `changePassword()`, bỏ qua
+kiểm mật khẩu cũ lẫn bước thu hồi refresh token. Khoá/mở tài khoản đã có endpoint riêng
+`PATCH /admin/users/:id/status`.
+
+### Đăng nhập bằng Google
+
+`POST /auth/google` nhận **ID token** do Google Identity Services cấp cho frontend và
+trả về đúng shape `{ user, tokens }` như `/auth/login` — không có redirect, không session,
+nên phần còn lại của API không phải biết tài khoản đến từ đâu.
+
+`GoogleAuthService.verifyIdToken` gọi `OAuth2Client.verifyIdToken` với `audience =
+GOOGLE_CLIENT_ID`, nên chữ ký, `iss`, `aud` và `exp` đều được Google kiểm; **mọi thông tin
+người dùng lấy từ payload đã verify, không tin field nào client gửi kèm**. Token thiếu
+`email_verified` bị từ chối — nếu không, ai đó tạo Google account mang email của người khác
+là chiếm được tài khoản qua bước liên kết bên dưới.
+
+Email trùng với tài khoản có sẵn thì **liên kết vào tài khoản đó** (ghi `google_id`,
+bật `is_verified`) chứ không tạo tài khoản thứ hai; `name`/`avatar` người dùng đã tự sửa
+không bị Google ghi đè. Tài khoản tạo mới từ Google được `is_verified = true` ngay và
+nhận role `USER`. Tài khoản bị khoá (`INACTIVE`) bị từ chối **trước khi** ghi `google_id`.
+
+**Liên kết vào tài khoản chưa từng kích hoạt thì mật khẩu trên đó bị xoá** (`password =
+NULL`). Nếu không, ai cũng có thể đăng ký trước bằng email người khác rồi ngồi chờ: chủ
+email đăng nhập Google là `is_verified` được bật giùm, và mật khẩu kẻ kia đặt lúc đăng ký
+bỗng dùng được để vào chính tài khoản đó. Tài khoản đã verified từ trước thì giữ nguyên
+mật khẩu — chủ nhân đã chứng minh sở hữu email rồi. `test/auth-google.e2e-spec.ts` có
+test hồi quy cho cả hai nhánh.
+
+Tra cứu đi theo thứ tự **`google_id` trước, email sau** (hai `findUnique` riêng, không
+gộp `OR`): `google_id` là danh tính thật, còn email có thể đã đổi chủ. Gộp `OR` thì khi
+người dùng đổi địa chỉ Gmail, hai điều kiện trúng hai bản ghi khác nhau và kết quả tuỳ
+database. Hai request đăng nhập đầu tiên chạy song song thì request thua cuộc bắt `P2002`
+và dùng lại bản ghi request kia vừa tạo, thay vì trả 500.
+
+Email được hạ về chữ thường ngay ở DTO (`@NormalizeEmail`) cho `register` / `login` /
+`forgot-password`, vì unique index của Postgres phân biệt hoa thường còn Google thì luôn
+trả email chữ thường — không chuẩn hoá thì `Alice@Example.com` và `alice@example.com`
+thành hai tài khoản. Migration `normalize_user_emails` hạ nốt dữ liệu cũ, và **bỏ qua**
+những hàng mà việc hạ chữ sẽ đụng một tài khoản khác (hai tài khoản thật, phải xử lý tay)
+để không làm chết lần deploy.
+
+Vì vậy `users.password` **nullable**: tài khoản chỉ đăng nhập bằng Google không có mật khẩu.
+`POST /auth/login` coi `password = null` là sai thông tin đăng nhập (không tiết lộ email nào
+tồn tại), còn `PATCH /users/me/password` trả 400 và hướng người dùng qua `forgot-password`
+để đặt mật khẩu đầu tiên.
+
+Thiếu `GOOGLE_CLIENT_ID` thì app vẫn khởi động bình thường, chỉ riêng `/auth/google`
+trả 503 — giống cách `S3_BUCKET` trống không làm chết app.
 
 ### Upload ảnh
 

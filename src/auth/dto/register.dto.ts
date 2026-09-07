@@ -6,6 +6,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { i18nValidationMessage } from 'nestjs-i18n';
+import { NormalizeEmail } from '../../common/decorators/normalize-email.decorator';
 import { Match } from '../../common/validators/match.validator';
 
 export class RegisterDto {
@@ -14,6 +15,7 @@ export class RegisterDto {
   @MaxLength(255, { message: i18nValidationMessage('validation.MAX_LENGTH') })
   name: string;
 
+  @NormalizeEmail()
   @IsEmail({}, { message: i18nValidationMessage('validation.IS_EMAIL') })
   @MaxLength(255, { message: i18nValidationMessage('validation.MAX_LENGTH') })
   email: string;

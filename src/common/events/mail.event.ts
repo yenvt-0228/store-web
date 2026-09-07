@@ -4,6 +4,7 @@ export const MailEvent = {
   USER_REGISTERED: 'user.registered',
   PASSWORD_RESET_REQUESTED: 'user.password-reset-requested',
   PASSWORD_CHANGED: 'user.password-changed',
+  GOOGLE_LINKED: 'user.google-linked',
 } as const;
 
 export interface UserRegisteredEvent {
@@ -23,5 +24,12 @@ export interface PasswordResetRequestedEvent {
 export interface PasswordChangedEvent {
   email: string;
   name: string;
+  locale: Locale;
+}
+
+export interface GoogleLinkedEvent {
+  email: string;
+  name: string;
+  passwordCleared: boolean;
   locale: Locale;
 }

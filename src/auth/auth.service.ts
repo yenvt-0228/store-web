@@ -15,6 +15,7 @@ import {
   UserResponseDto,
 } from '../common/dto/user-response.dto';
 import {
+  GoogleLinkedEvent,
   MailEvent,
   PasswordResetRequestedEvent,
   UserRegisteredEvent,
@@ -24,6 +25,7 @@ import {
   userWithRolesInclude,
   UserWithRoles,
 } from '../common/types/user-with-roles';
+import { Prisma } from '../generated/prisma/client';
 import { UserStatus } from '../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivateAccountDto } from './dto/activate-account.dto';
@@ -34,6 +36,8 @@ import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { TokenService } from './token.service';
 import { toLocale } from '../common/constants/locale.constant';
+import { GoogleLoginDto } from './dto/google-login.dto';
+import { GoogleAuthService, GoogleProfile } from './google-auth.service';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -51,6 +55,7 @@ export class AuthService {
     private i18n: I18nService,
     private tokens: TokenService,
     private events: EventEmitter2,
+    private google: GoogleAuthService,
   ) {}
 
   async register(dto: RegisterDto): Promise<{
@@ -117,7 +122,11 @@ export class AuthService {
       include: userWithRolesInclude,
     });
 
-    if (!user || !(await bcrypt.compare(dto.password, user.password))) {
+    if (
+      !user ||
+      !user.password ||
+      !(await bcrypt.compare(dto.password, user.password))
+    ) {
       throw new UnauthorizedException(this.i18n.t('auth.INVALID_CREDENTIALS'));
     }
 
@@ -198,6 +207,123 @@ export class AuthService {
     });
 
     return { message: this.i18n.t('auth.PASSWORD_RESET') };
+  }
+
+  async loginWithGoogle(
+    dto: GoogleLoginDto,
+  ): Promise<{ user: UserResponseDto; tokens: AuthTokens }> {
+    const profile = await this.google.verifyIdToken(dto.idToken);
+    const user = await this.findOrCreateGoogleUser(profile);
+
+    this.assertUserCanLogin(user);
+
+    return {
+      user: toUserResponse(user),
+      tokens: await this.issueTokens(user),
+    };
+  }
+
+  private async findOrCreateGoogleUser(
+    profile: GoogleProfile,
+  ): Promise<UserWithRoles> {
+    const existing =
+      (await this.prisma.user.findUnique({
+        where: { googleId: profile.googleId },
+        include: userWithRolesInclude,
+      })) ??
+      (await this.prisma.user.findUnique({
+        where: { email: profile.email },
+        include: userWithRolesInclude,
+      }));
+
+    if (!existing) {
+      return this.createGoogleUser(profile);
+    }
+
+    if (existing.googleId === profile.googleId) {
+      return existing;
+    }
+
+    if (existing.googleId) {
+      throw new ConflictException(this.i18n.t('auth.GOOGLE_ALREADY_LINKED'));
+    }
+
+    return this.linkGoogleToExistingUser(existing, profile);
+  }
+
+  private async createGoogleUser(
+    profile: GoogleProfile,
+  ): Promise<UserWithRoles> {
+    try {
+      return await this.prisma.user.create({
+        data: {
+          name: profile.name,
+          email: profile.email,
+          avatar: profile.avatar,
+          googleId: profile.googleId,
+          isVerified: true,
+          roles: {
+            create: {
+              role: {
+                connectOrCreate: {
+                  where: { name: RoleName.USER },
+                  create: { name: RoleName.USER, description: 'Người dùng' },
+                },
+              },
+            },
+          },
+        },
+        include: userWithRolesInclude,
+      });
+    } catch (error) {
+      if (
+        !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+        error.code !== 'P2002'
+      ) {
+        throw error;
+      }
+
+      const created = await this.prisma.user.findUnique({
+        where: { email: profile.email },
+        include: userWithRolesInclude,
+      });
+      if (!created) {
+        throw error;
+      }
+      return created;
+    }
+  }
+
+  private async linkGoogleToExistingUser(
+    existing: UserWithRoles,
+    profile: GoogleProfile,
+  ): Promise<UserWithRoles> {
+    if (existing.status === UserStatus.INACTIVE) {
+      throw new ForbiddenException(this.i18n.t('auth.ACCOUNT_INACTIVE'));
+    }
+
+    const passwordCleared = !existing.isVerified;
+
+    const updated = await this.prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        googleId: profile.googleId,
+        isVerified: true,
+        avatar: existing.avatar ?? profile.avatar,
+        name: existing.name || profile.name,
+        ...(passwordCleared ? { password: null } : {}),
+      },
+      include: userWithRolesInclude,
+    });
+
+    this.events.emit(MailEvent.GOOGLE_LINKED, {
+      email: updated.email,
+      name: updated.name,
+      passwordCleared,
+      locale: toLocale(updated.locale),
+    } satisfies GoogleLinkedEvent);
+
+    return updated;
   }
 
   private assertUserCanLogin(user: UserWithRoles): void {
