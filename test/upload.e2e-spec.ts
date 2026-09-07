@@ -4,6 +4,7 @@ import {
   SeededUser,
   body,
   createTestApp,
+  db,
   http,
   resetDb,
   seedUser,
@@ -67,6 +68,42 @@ describe('Upload (e2e) — ảnh lên S3/R2', () => {
     expect(images[0].key).not.toContain('anh.png');
     expect(images[0].key).toMatch(/^products\/[0-9a-f-]{36}\.png$/);
     expect(images[0].url).toContain(images[0].key);
+  });
+
+  it('mỗi file upload được ghi vào sổ kiểm kê để cron còn dọn được', async () => {
+    const res = await http(app)
+      .post('/admin/uploads/images')
+      .set(auth(admin.accessToken))
+      .attach('files', png(), 'a.png')
+      .attach('files', jpeg(), 'b.jpg')
+      .expect(201);
+
+    const { images } = body<ImagesBody>(res);
+    const rows = await db(app).uploadedObject.findMany({
+      orderBy: { url: 'asc' },
+    });
+
+    // Không có bước này thì object nằm lại storage vĩnh viễn khi client bỏ ngang.
+    expect(rows.map((row) => row.url).sort()).toEqual(
+      images.map((image) => image.url).sort(),
+    );
+    expect(rows.map((row) => row.objectKey).sort()).toEqual(
+      images.map((image) => image.key).sort(),
+    );
+  });
+
+  it('avatar cũng được ghi sổ, không riêng ảnh sản phẩm', async () => {
+    const res = await http(app)
+      .post('/uploads/avatar')
+      .set(auth(member.accessToken))
+      .attach('file', png(), 'toi.png')
+      .expect(201);
+
+    const { image } = body<ImageBody>(res);
+    const row = await db(app).uploadedObject.findUniqueOrThrow({
+      where: { url: image.url },
+    });
+    expect(row.objectKey).toBe(image.key);
   });
 
   it('POST /admin/uploads/images nhiều file -> mỗi file một key riêng', async () => {
