@@ -229,6 +229,20 @@ model Image {
   @@map("images")
 }
 
+// Sổ kiểm kê object đã đẩy lên storage. Endpoint upload trả URL về cho client
+// tự gắn vào entity, nên object có thể không bao giờ được gắn (client bỏ ngang)
+// hoặc thôi được tham chiếu (đổi avatar) — lúc đó không dòng images nào trỏ tới
+// và cron dọn ảnh không nhìn thấy để xoá.
+model UploadedObject {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  objectKey String   @unique @map("object_key") @db.VarChar(500)
+  url       String   @unique @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("uploaded_objects")
+}
+
 model Order {
   id String @id @default(uuid(7)) @db.Uuid
 
