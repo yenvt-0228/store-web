@@ -1,6 +1,7 @@
 import { BullModule } from '@nestjs/bullmq';
 import { DynamicModule, Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { runsBackgroundJobs } from '../common/app-role';
+import { mailQueueEnabled } from '../queue/queue.module';
 import { MAIL_QUEUE } from './mail.constant';
 import { MailDispatcher } from './mail.dispatcher';
 import { MailListener } from './mail.listener';
@@ -11,34 +12,24 @@ import { MailService } from './mail.service';
 @Module({})
 export class MailModule {
   static register(): DynamicModule {
-    const queueEnabled = process.env.MAIL_QUEUE_ENABLED === 'true';
+    const queueEnabled = mailQueueEnabled();
+
+    // Queue bật thì process nào cũng cần Queue để ĐẨY job (MailDispatcher), nhưng
+    // chỉ process việc nền mới TIÊU THỤ. Nếu API cũng chạy processor thì tách
+    // worker ra không giảm được tải gì cho tiến trình phục vụ request.
+    const consumesJobs = queueEnabled && runsBackgroundJobs();
 
     return {
       module: MailModule,
       imports: queueEnabled
-        ? [
-            BullModule.forRootAsync({
-              inject: [ConfigService],
-              useFactory: (config: ConfigService) => ({
-                connection: {
-                  host: config.get<string>('REDIS_HOST') ?? '127.0.0.1',
-                  port: Number(config.get<string>('REDIS_PORT') ?? 6379),
-                  password: config.get<string>('REDIS_PASSWORD') || undefined,
-                  db: Number(config.get<string>('REDIS_DB') ?? 0),
-                  // BullMQ yêu cầu null cho các lệnh blocking của worker.
-                  maxRetriesPerRequest: null,
-                },
-              }),
-            }),
-            BullModule.registerQueue({ name: MAIL_QUEUE }),
-          ]
+        ? [BullModule.registerQueue({ name: MAIL_QUEUE })]
         : [],
       providers: [
         MailService,
         MailDispatcher,
         MailRenderer,
         MailListener,
-        ...(queueEnabled ? [MailProcessor] : []),
+        ...(consumesJobs ? [MailProcessor] : []),
       ],
       exports: [MailDispatcher],
     };

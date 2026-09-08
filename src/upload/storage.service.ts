@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   DeleteObjectsCommand,
+  GetObjectCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -59,6 +60,28 @@ export class StorageService implements OnModuleDestroy {
     );
 
     return this.publicUrl(key);
+  }
+
+  // Đọc object bằng credentials thay vì URL công khai: dùng cho file không được
+  // phép ai cũng tải (báo cáo chứa dữ liệu khách hàng).
+  async get(key: string): Promise<Buffer | null> {
+    if (!this.client) {
+      this.logger.log(`[UPLOAD-DEV] không có file thật để đọc: ${key}`);
+      return null;
+    }
+
+    try {
+      const result = await this.client.send(
+        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+
+      const bytes = await result.Body?.transformToByteArray();
+      return bytes ? Buffer.from(bytes) : null;
+    } catch (error) {
+      const name = (error as { name?: string }).name;
+      if (name === 'NoSuchKey' || name === 'NotFound') return null;
+      throw error;
+    }
   }
 
   async deleteMany(keys: string[]): Promise<number> {

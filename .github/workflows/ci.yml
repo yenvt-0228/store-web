@@ -35,6 +35,11 @@ jobs:
       - name: Lint
         run: npm run lint:ci
 
+      # `nest build` dùng tsconfig.build.json (loại trừ *.spec.ts) nên lỗi kiểu
+      # trong file test lọt qua. Bước này chạy tsconfig.json — gồm cả test.
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Build
         run: npm run build
 
@@ -97,6 +102,7 @@ jobs:
           EMAIL_VERIFICATION_TTL_HOURS=24
           PASSWORD_RESET_TTL_MINUTES=60
           MAIL_QUEUE_ENABLED=false
+          APP_ROLE=all
           PAYMENT_CALLBACK_SECRET=ci-callback-secret
           SMTP_HOST=
           REDIS_HOST=127.0.0.1

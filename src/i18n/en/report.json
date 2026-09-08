@@ -1,0 +1,6 @@
+{
+  "QUEUE_DISABLED": "Report export requires the queue. Set REPORT_QUEUE_ENABLED=true and run the worker process.",
+  "JOB_NOT_FOUND": "Report job not found (it may have passed the 24-hour retention)",
+  "NOT_READY": "The report is not finished or has failed — check the job status before downloading",
+  "FILE_GONE": "The report file is no longer in storage (cleaned up after 24 hours)"
+}

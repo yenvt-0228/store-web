@@ -8,9 +8,25 @@ import { I18nValidationPipe } from 'nestjs-i18n';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import { ValidationExceptionFilter } from './common/filters/validation-exception.filter';
+import { AppRole, resolveAppRole } from './common/app-role';
 
 async function bootstrap() {
+  const role = resolveAppRole();
+
+  // main.ts là entrypoint của process HTTP. APP_ROLE=worker ở đây là cấu hình sai:
+  // process sẽ vừa phục vụ request vừa chạy cron, đúng cái mà việc tách ra tránh.
+  if (role === AppRole.WORKER) {
+    console.error(
+      'APP_ROLE=worker nhưng đang chạy entrypoint HTTP — dùng "npm run start:worker" (dist/main.worker.js).',
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   const app = await NestFactory.create(AppModule);
+
+  // Đóng Prisma/Redis/queue gọn gàng khi nhận SIGTERM lúc deploy bản mới.
+  app.enableShutdownHooks();
 
   // I18nValidationPipe: giống ValidationPipe nhưng message lỗi dịch được theo ngôn ngữ
   app.useGlobalPipes(
@@ -45,7 +61,7 @@ async function bootstrap() {
 
   await app.listen(port, '0.0.0.0');
 
-  console.log(`Server running on http://localhost:${port}`);
+  console.log(`Server running on http://localhost:${port} (APP_ROLE=${role})`);
 }
 
 void bootstrap();

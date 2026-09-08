@@ -14,5 +14,6 @@
   "IS_UUID": "{property} phải là UUID hợp lệ",
   "IS_NUMBER": "{property} phải là số",
   "IS_BOOLEAN": "{property} phải là true hoặc false",
-  "IS_ARRAY": "{property} phải là một mảng"
+  "IS_ARRAY": "{property} phải là một mảng",
+  "IS_DATE": "{property} phải là ngày theo định dạng ISO 8601"
 }

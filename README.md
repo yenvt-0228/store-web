@@ -14,7 +14,8 @@ Xây dựng theo hai tài liệu thiết kế:
 **giỏ hàng trên Redis**, **đơn hàng** và **thanh toán**, kèm hạ tầng dùng chung
 (Redis, email theo event/queue, cron dọn dẹp).
 
-Chưa làm: comments, reviews, chat, product-suggestions, statistics.
+Chưa làm: comments, reviews, chat, product-suggestions, statistics (đã có xuất báo cáo
+đơn hàng ra `.xlsx` chạy nền).
 
 Tài liệu Swagger: `http://localhost:3001/docs`
 
@@ -229,6 +230,12 @@ link và thay HMAC bằng thuật toán ký của cổng đó.
   admin khóa tài khoản/đổi quyền là có hiệu lực ngay.
 - **Email đi qua event.** Service nghiệp vụ chỉ `emit` sự kiện; `MailListener`
   lo nội dung và gửi. Bật `MAIL_QUEUE_ENABLED=true` để đẩy qua hàng đợi BullMQ.
+- **Việc nền tách được ra process riêng bằng `APP_ROLE`.** Cùng một image, khác
+  entrypoint: `dist/main.js` phục vụ HTTP, `dist/main.worker.js` chạy cron và tiêu thụ
+  job. Chi tiết ở [Tách process việc nền](#tách-process-việc-nền-app_role).
+- **Job CPU-bound chạy trong worker thread, job I/O thì không.** Xuất báo cáo `.xlsx`
+  dựng file ở thread riêng vì `exceljs` là JS thuần chạy đồng bộ; gửi mail thì không cần
+  vì SMTP là I/O. Chi tiết và số đo ở [Worker thread cho job ngốn CPU](#worker-thread-cho-job-ngốn-cpu).
 - **Upload chỉ trả URL, không tự gắn vào bản ghi.** Endpoint upload không biết gì về
   sản phẩm hay user; việc gắn ảnh là một request riêng. Đổi nhà cung cấp storage hay
   thêm chỗ dùng ảnh mới đều không phải sửa nghiệp vụ.
@@ -293,6 +300,131 @@ npm run start:dev         # watch mode
 npm run start:prod        # chạy bản build
 ```
 
+### Tách process việc nền (`APP_ROLE`)
+
+Mặc định `APP_ROLE=all`: một process vừa phục vụ HTTP, vừa chạy cron, vừa tiêu thụ
+job mail — tiện khi dev. Trên môi trường thật thì tách đôi:
+
+```bash
+APP_ROLE=api    npm run start:prod      # chỉ HTTP
+npm run start:worker:prod               # chỉ cron + job (tự đặt APP_ROLE=worker)
+```
+
+| `APP_ROLE` | Mở cổng HTTP | Đăng ký cron | Tiêu thụ job (mail, báo cáo) | Đẩy job vào queue |
+| --- | --- | --- | --- | --- |
+| `all` (mặc định) | có | có | có | có |
+| `api` | có | **không** | **không** | có |
+| `worker` | không | có | có | có |
+
+Hai lý do tách:
+
+- **Cron phải chạy đúng một chỗ.** `TokenCleanupService` và `ImageCleanupService`
+  xoá dữ liệu vào 3h/4h sáng. Scale API lên 3 replica mà mỗi replica đều đăng ký cron
+  thì lệnh dọn chạy 3 lần cùng lúc — vì vậy `TasksModule.register()` chỉ nạp provider
+  khi `APP_ROLE` khác `api`.
+- **Job nặng không được giành event loop của request.** Node chạy JS trên một thread;
+  một job ngốn CPU lâu là mọi request đang chờ đều bị kéo theo. `MailProcessor` và
+  `ReportProcessor` chỉ được đăng ký ở process việc nền, nên process API chỉ **đẩy** job
+  rồi trả response ngay. Job nào ngốn CPU thì còn đi tiếp một bước nữa —
+  [worker thread](#worker-thread-cho-job-ngốn-cpu).
+
+Gõ sai (`APP_ROLE=workers`) thì app **chết ngay lúc boot** chứ không âm thầm rơi về
+`all` — fallback im lặng sẽ khiến cả hai process cùng chạy cron mà không ai biết.
+Chạy sai entrypoint cũng bị chặn: `APP_ROLE=worker` + `dist/main.js`, hoặc
+`APP_ROLE=api` + `dist/main.worker.js`, đều thoát với mã 1 kèm lời nhắc.
+
+Với Docker, worker dùng **cùng một image**, chỉ khác lệnh:
+
+```bash
+docker run -e APP_ROLE=worker -e RUN_MIGRATIONS=false <image> node dist/main.worker.js
+```
+
+`RUN_MIGRATIONS=false` cho worker là bắt buộc: để `true` thì API và worker cùng chạy
+`prisma migrate deploy` lúc deploy và tranh nhau advisory lock của Prisma.
+
+### Worker thread cho job ngốn CPU
+
+Việc nền thuần I/O (SMTP, SQL, gọi S3) **không cần** worker thread: async là đủ. Native
+addon cũng không cần — `sharp` và `bcrypt` là C++ chạy trên libuv threadpool, đã song
+song sẵn với event loop; muốn nhanh hơn thì tăng `UV_THREADPOOL_SIZE`.
+
+Thứ thật sự cần là **CPU-bound viết bằng JS thuần**. Trong repo này đó là sinh file
+Excel bằng `exceljs` cho báo cáo đơn hàng (`REPORT_QUEUE_ENABLED=true`):
+
+```
+POST /admin/reports/orders            -> 202 { "jobId": "7" }   (đẩy job, trả ngay)
+GET  /admin/reports/orders/7          -> { state, progress, result: {...} }
+GET  /admin/reports/orders/7/download -> file .xlsx
+```
+
+**File báo cáo không có URL công khai.** Nó chứa email, điện thoại và địa chỉ của mọi
+khách hàng, nên job chỉ trả `objectKey`; đường tải duy nhất là endpoint `download` đi qua
+`JwtAuthGuard` + `@Roles(ADMIN)`. Ba lớp bảo vệ:
+
+- `init-bucket.mjs` chỉ mở quyền đọc ẩn danh cho `products/*` và `avatars/*` — **không**
+  mở cả bucket. `GET` thẳng vào `reports/...` trả 403.
+- Key là `reports/orders-<uuid v4>.xlsx`, không phải `jobId` tăng dần — id tuần tự thì
+  đoán được key báo cáo của người khác.
+- Object được ghi vào `uploaded_objects` nên `ImageCleanupService` xoá sau 24h ân hạn,
+  trùng đúng thời gian job được giữ trong queue.
+
+Dùng bucket production (R2/S3) thì **phải tự kiểm policy**: mở `GetObject` cho cả bucket
+là mở luôn `reports/`.
+
+Job chia làm ba đoạn, và **chỉ đoạn giữa** đi vào thread khác:
+
+| Đoạn | Ở đâu | Vì sao |
+| --- | --- | --- |
+| Đọc đơn hàng từ Postgres | process worker (có DI) | I/O — async là đủ, và dùng chung một connection pool của Prisma |
+| Dựng file `.xlsx` | **worker thread** | CPU-bound JS thuần, chặn event loop nếu để nguyên |
+| Đẩy file lên S3 | process worker (có DI) | I/O, và tái dùng `StorageService` |
+
+Đo trên máy dev với 30.000 dòng (`buildOrdersSheet` vs `XlsxThreadRunner`, mỗi kiểu một
+process riêng để không hâm nóng JIT cho nhau):
+
+| | Thời gian job | Event loop bị treo lâu nhất |
+| --- | --- | --- |
+| Dựng ngay trong process | ~1480ms | **~1000ms** |
+| Dựng trong worker thread | ~1580ms | ~77ms |
+
+Tức là đổi ~7% thời gian của chính job đó để lấy lại **event loop không bị chặn 1 giây**.
+Phần 77ms còn lại là structured clone 30k dòng sang thread — việc này chạy trên thread
+gọi nên không tránh được, chỉ giảm được bằng cách truyền ít dữ liệu hơn.
+
+**Vì sao một thread mỗi job, không phải pool.** Đo tách từng phần: spawn thread + clone
+dữ liệu ~55ms, `require('exceljs')` trong isolate mới ~78ms, dựng file ~1390ms. Overhead
+cố định chỉ ~135ms trên một job chạy hàng giây, nên pool không đáng thêm phần quản lý
+vòng đời. Đổi lại được cách ly: một job làm nổ RAM thì thread đó chết, job sau vẫn sạch.
+Khi nào báo cáo chạy liên tục nhiều lần mỗi phút thì mới nên đổi sang worker sống lâu.
+
+**Vì sao không dùng sandboxed processor của BullMQ** (`processors: [{ path, useWorkerThreads: true }]`,
+`@nestjs/bullmq` có hỗ trợ): cách đó đưa **cả job** vào thread, nên phần đọc DB cũng
+nằm trong đó. File processor chạy ngoài DI container nên phải tự `new PrismaClient()`
+trong mỗi thread — mỗi thread một connection pool riêng, rất dễ vượt `max_connections`
+của Neon. Tách theo đoạn giữ được I/O ở process chính với đúng một pool.
+
+Quá `MAX_REPORT_ROWS` (50.000) dòng thì query lấy thừa 1 dòng để **biết mình đã cắt**,
+rồi trả `truncated: true` kèm `logger.warn` — cắt mà vẫn báo `completed` với đúng 50.000
+dòng thì admin không phân biệt được báo cáo đủ và báo cáo thiếu.
+
+Khoảng ngày: `to` dạng `2026-12-31` được dịch thành `lt 2027-01-01T00:00Z` chứ không phải
+`lte 2026-12-31T00:00Z` — nếu không thì trọn ngày cuối của khoảng bị loại khỏi báo cáo.
+Có kèm giờ (`2026-12-31T10:30:00Z`) thì giữ nguyên `lte`.
+
+Hai chi tiết dễ vấp:
+
+- `XlsxThreadRunner` trỏ `join(__dirname, 'xlsx.worker.js')`, tức **file đã build**.
+  `nest start` cũng chạy từ `dist` nên dev và production đều đúng, nhưng jest chạy từ
+  `src` qua ts-jest thì không có file `.js` — vì vậy unit test gọi `buildOrdersSheet()`
+  trực tiếp ([orders-sheet.spec.ts](src/report/orders-sheet.spec.ts)), còn e2e chỉ kiểm
+  phần HTTP.
+- Worker `postMessage` một `Uint8Array` **copy sang ArrayBuffer riêng** rồi mới transfer.
+  Transfer thẳng `buffer.buffer` của một Node Buffer là sai: Buffer nhỏ nằm trên vùng
+  nhớ pool dùng chung, transfer sẽ vô hiệu hoá cả những Buffer khác trên vùng đó.
+
+Không bật `REPORT_QUEUE_ENABLED` thì endpoint trả **503** chứ không âm thầm dựng file
+trong request — dựng ngay trong request đúng là thứ cần tránh.
+
 ## Test
 
 ```bash
@@ -313,7 +445,7 @@ Chạy khi push lên `main` và khi mở pull request, gồm hai job song song:
 
 | Job | Nội dung |
 | --- | --- |
-| `quality` | `prisma generate` → lint → build → unit test |
+| `quality` | `prisma generate` → lint → typecheck → build → unit test |
 | `e2e` | Dựng PostgreSQL 16 + Redis 7 ngay trong runner rồi chạy toàn bộ e2e |
 
 Hai điểm bắt buộc, sửa là hỏng:
@@ -322,6 +454,9 @@ Hai điểm bắt buộc, sửa là hỏng:
   `.gitignore` nên trên CI chưa có Prisma Client.
 - **Dùng `npm run lint:ci`, không dùng `npm run lint`.** Script `lint` có cờ
   `--fix`: chạy trên CI nó tự sửa rồi báo pass, che mất lỗi thật.
+- **`npm run typecheck` là bước riêng, không thay được bằng `npm run build`.**
+  `nest build` dùng `tsconfig.build.json` (loại trừ `*.spec.ts`), nên lỗi kiểu trong file
+  test lọt qua cả build lẫn ts-jest. `typecheck` chạy `tsconfig.json` — gồm cả test.
 
 E2E dùng Postgres dựng trong runner chứ không dùng database Neon, để CI chạy
 độc lập, song song được và không bao giờ đụng vào dữ liệu thật. CI **không dựng MinIO**:
