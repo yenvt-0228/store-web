@@ -1,6 +1,7 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Queue } from 'bullmq';
+import { DEFAULT_JOB_OPTIONS } from '../queue/queue.constant';
 import { MAIL_QUEUE, MailJob, MailPayload } from './mail.constant';
 import { MailService } from './mail.service';
 
@@ -11,26 +12,30 @@ export class MailDispatcher {
   private readonly logger = new Logger(MailDispatcher.name);
 
   constructor(
-    private mailService: MailService,
-    @Optional() @InjectQueue(MAIL_QUEUE) private queue?: Queue,
+    private readonly mailService: MailService,
+    @Optional() @InjectQueue(MAIL_QUEUE) private readonly queue?: Queue,
   ) {}
 
+  /**
+   * Hands a mail off to the queue, falling back to sending it inline.
+   *
+   * A queue outage must not fail the request that triggered the mail, so an
+   * enqueue failure degrades to a direct send instead of throwing.
+   *
+   * @param payload - Recipient, template and template variables.
+   * @returns Resolves once the mail is queued or has been sent directly.
+   */
   async dispatch(payload: MailPayload): Promise<void> {
     if (this.queue) {
       try {
         await this.withTimeout(
-          this.queue.add(MailJob.SEND, payload, {
-            attempts: 3,
-            backoff: { type: 'exponential', delay: 2000 },
-            removeOnComplete: 100,
-            removeOnFail: 500,
-          }),
+          this.queue.add(MailJob.SEND, payload, DEFAULT_JOB_OPTIONS),
           ENQUEUE_TIMEOUT_MS,
         );
         return;
       } catch (error) {
         this.logger.warn(
-          `Không đẩy được job vào queue (${(error as Error).message}), gửi trực tiếp.`,
+          `Could not enqueue the job (${(error as Error).message}), sending directly.`,
         );
       }
     }
@@ -38,24 +43,38 @@ export class MailDispatcher {
     await this.sendSafely(payload);
   }
 
+  /**
+   * Caps how long an operation may take.
+   *
+   * @param promise - Operation to race against the deadline.
+   * @param ms - Deadline in milliseconds.
+   * @returns The settled value of `promise`.
+   * @throws {Error} When the deadline passes first.
+   */
   private withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
     return Promise.race([
       promise,
       new Promise<never>((_, reject) => {
         setTimeout(
-          () => reject(new Error(`queue không phản hồi sau ${ms}ms`)),
+          () => reject(new Error(`the queue did not respond within ${ms}ms`)),
           ms,
         ).unref();
       }),
     ]);
   }
 
+  /**
+   * Sends a mail and swallows any failure, logging it instead.
+   *
+   * @param payload - Recipient, template and template variables.
+   * @returns Resolves whether or not the mail went out.
+   */
   private async sendSafely(payload: MailPayload): Promise<void> {
     try {
       await this.mailService.send(payload);
     } catch (error) {
       this.logger.error(
-        `Gửi mail tới ${payload.to} thất bại: ${(error as Error).message}`,
+        `Sending mail to ${payload.to} failed: ${(error as Error).message}`,
       );
     }
   }

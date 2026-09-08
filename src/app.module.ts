@@ -33,7 +33,7 @@ import { PaymentModule } from './payment/payment.module';
       isGlobal: true,
     }),
     I18nModule.forRoot({
-      fallbackLanguage: 'en', // ngôn ngữ
+      fallbackLanguage: 'en', // language used when the request asks for none
       loaderOptions: {
         path: join(__dirname, '/i18n/'),
         watch: true,

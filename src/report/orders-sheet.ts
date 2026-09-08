@@ -1,26 +1,5 @@
 import ExcelJS from 'exceljs';
-
-// Dòng đã được làm phẳng ở phía Nest: Decimal/Date của Prisma không đi qua
-// structured clone sang worker thread một cách đáng tin, nên quy về number/string
-// trước khi truyền.
-export interface OrderReportRow {
-  orderCode: string;
-  createdAt: string;
-  status: string;
-  paymentStatus: string;
-  paymentMethod: string;
-  customerName: string;
-  customerEmail: string;
-  shippingPhone: string;
-  shippingAddress: string;
-  itemCount: number;
-  totalAmount: number;
-}
-
-export interface OrdersSheetRequest {
-  rows: OrderReportRow[];
-  title: string;
-}
+import { OrderReportRow, OrdersSheetRequest } from './report.interface';
 
 interface ColumnSpec {
   header: string;
@@ -29,6 +8,9 @@ interface ColumnSpec {
   numeric?: boolean;
 }
 
+// Column headers are the rendered output of the report, read by Vietnamese
+// admins, so they stay in Vietnamese while `key` keeps the English field name
+// the rest of the code uses.
 const COLUMNS: ColumnSpec[] = [
   { header: 'Mã đơn', key: 'orderCode', width: 22 },
   { header: 'Ngày tạo', key: 'createdAt', width: 20 },
@@ -43,8 +25,16 @@ const COLUMNS: ColumnSpec[] = [
   { header: 'Thành tiền', key: 'totalAmount', width: 16, numeric: true },
 ];
 
-// Đây là phần ngốn CPU: exceljs dựng XML rồi zip lại, tất cả bằng JS thuần và
-// đồng bộ. Hàm được tách riêng khỏi worker thread để test gọi trực tiếp được.
+/**
+ * Renders the orders worksheet into an xlsx buffer.
+ *
+ * This is the CPU-bound part: exceljs builds the XML and zips it, all in plain
+ * synchronous JavaScript. Kept separate from the worker thread entry point so
+ * tests can call it directly.
+ *
+ * @param request - Flattened order rows and the worksheet tab name.
+ * @returns The complete xlsx file as a buffer.
+ */
 export async function buildOrdersSheet(
   request: OrdersSheetRequest,
 ): Promise<Buffer> {

@@ -16,15 +16,16 @@ export class ReportModule {
   static register(): DynamicModule {
     const queueEnabled = reportQueueEnabled();
 
-    // Giống MailModule: process API chỉ đẩy job, process việc nền mới dựng file.
+    // Same as MailModule: the API process only pushes jobs, the background
+    // process is the one that builds the file.
     const consumesJobs = queueEnabled && runsBackgroundJobs();
 
     return {
       module: ReportModule,
       imports: [
         AuthModule,
-        // UploadModule ở mọi role: process API cần StorageService để phục vụ
-        // endpoint download, không chỉ worker cần để đẩy file lên.
+        // UploadModule in every role: the API process needs StorageService to
+        // serve the download endpoint, not just the worker to upload.
         UploadModule,
         ...(queueEnabled
           ? [BullModule.registerQueue({ name: REPORT_QUEUE })]

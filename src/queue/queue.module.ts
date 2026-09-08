@@ -14,9 +14,9 @@ function anyQueueEnabled(): boolean {
   return mailQueueEnabled() || reportQueueEnabled();
 }
 
-// Kết nối Redis dùng chung cho mọi queue. `BullModule.forRoot` đăng ký config ở
-// phạm vi global, nên module nào chỉ cần `registerQueue` là dùng lại được — không
-// module nào tự mở kết nối riêng nữa.
+// Redis connection shared by every queue. `BullModule.forRoot` registers the
+// config globally, so any module only needs `registerQueue` to reuse it and no
+// module opens a connection of its own any more.
 @Module({})
 export class QueueModule {
   static register(): DynamicModule {
@@ -35,7 +35,7 @@ export class QueueModule {
               port: Number(config.get<string>('REDIS_PORT') ?? 6379),
               password: config.get<string>('REDIS_PASSWORD') || undefined,
               db: Number(config.get<string>('REDIS_DB') ?? 0),
-              // BullMQ yêu cầu null cho các lệnh blocking của worker.
+              // BullMQ requires null for the worker's blocking commands.
               maxRetriesPerRequest: null,
             },
           }),

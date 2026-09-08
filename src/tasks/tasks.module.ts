@@ -6,8 +6,9 @@ import { TokenCleanupService } from './token-cleanup.service';
 
 @Module({})
 export class TasksModule {
-  // Cron chỉ đăng ký ở process chạy việc nền. Process API (hoặc mỗi replica của nó)
-  // cũng đăng ký thì cùng một lệnh dọn dữ liệu chạy nhiều lần vào 3h/4h sáng.
+  // Cron is only registered in the process that runs background work. If the
+  // API process (or each of its replicas) registered it too, the same cleanup
+  // would run several times at 3am/4am.
   static register(): DynamicModule {
     if (!runsBackgroundJobs()) {
       return { module: TasksModule };

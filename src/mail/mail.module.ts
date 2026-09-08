@@ -14,9 +14,10 @@ export class MailModule {
   static register(): DynamicModule {
     const queueEnabled = mailQueueEnabled();
 
-    // Queue bật thì process nào cũng cần Queue để ĐẨY job (MailDispatcher), nhưng
-    // chỉ process việc nền mới TIÊU THỤ. Nếu API cũng chạy processor thì tách
-    // worker ra không giảm được tải gì cho tiến trình phục vụ request.
+    // When the queue is on every process needs the Queue to PUSH jobs
+    // (MailDispatcher), but only the background process CONSUMES them. If the
+    // API ran the processor too, splitting the worker out would take no load
+    // off the process serving requests.
     const consumesJobs = queueEnabled && runsBackgroundJobs();
 
     return {

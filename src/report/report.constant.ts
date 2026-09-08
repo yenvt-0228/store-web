@@ -1,35 +1,22 @@
-import { OrderStatus } from '../generated/prisma/enums';
-
 export const REPORT_QUEUE = 'report';
 
 export const ReportJob = {
   ORDERS_XLSX: 'orders-xlsx',
 } as const;
 
+// Worksheet tab name of the exported file. The report is read by Vietnamese
+// admins, so the rendered output stays in Vietnamese while the code around it
+// does not.
+export const ORDERS_SHEET_TITLE = 'Đơn hàng';
+
 export const XLSX_MIME =
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-// Chặn trên số dòng: file càng lớn thì thread càng ngốn RAM, mà RAM của thread
-// tính vào cùng một process. 50k dòng ~ 8-10MB xlsx, đủ cho báo cáo tháng.
+// Row ceiling: a bigger sheet means a bigger buffer inside the worker thread,
+// and that memory belongs to the same process. 50k rows is roughly an 8-10MB
+// file, enough for a monthly report.
 export const MAX_REPORT_ROWS = 50_000;
 
-// Job treo (exceljs gặp dữ liệu lạ, thread không postMessage) thì phải kết thúc
-// chứ không giữ thread sống mãi.
+// A stuck job (exceljs choking on odd data, thread never posting back) has to
+// end instead of holding a live thread forever.
 export const XLSX_TIMEOUT_MS = 60_000;
-
-export interface OrderReportPayload {
-  from?: string;
-  to?: string;
-  status?: OrderStatus;
-  requestedBy: string;
-}
-
-export interface OrderReportResult {
-  // Chỉ trả key, KHÔNG trả URL công khai: file chứa email/điện thoại/địa chỉ
-  // khách hàng, chỉ tải được qua endpoint download đã xác thực.
-  objectKey: string;
-  rows: number;
-  bytes: number;
-  buildMs: number;
-  truncated: boolean;
-}

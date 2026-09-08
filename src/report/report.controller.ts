@@ -17,7 +17,6 @@ import { RoleName } from '../common/constants/role.constant';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { OrderReportDto } from './dto/order-report.dto';
-import { XLSX_MIME } from './report.constant';
 import { ReportService } from './report.service';
 
 @ApiTags('admin/reports')
@@ -26,33 +25,48 @@ import { ReportService } from './report.service';
 @Roles(RoleName.ADMIN)
 @Controller('admin/reports')
 export class ReportController {
-  constructor(private reportService: ReportService) {}
+  constructor(private readonly reportService: ReportService) {}
 
+  /**
+   * Queues an orders export and answers 202 without waiting for the file.
+   *
+   * @param dto - Date range and status filters for the export.
+   * @param user - The authenticated admin, recorded on the job.
+   * @returns The id of the queued job.
+   */
   @ApiOperation({
     summary: 'Đặt hàng đợi xuất báo cáo đơn hàng (.xlsx) — trả về jobId ngay',
   })
   @Post('orders')
   @HttpCode(HttpStatus.ACCEPTED)
-  request(@Body() dto: OrderReportDto, @CurrentUser() user: AuthUser) {
+  request(
+    @Body() dto: OrderReportDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<{ jobId: string }> {
     return this.reportService.requestOrderReport(dto, user.id);
   }
 
+  /**
+   * Reports the progress of a queued export.
+   *
+   * @param jobId - Job id returned when the export was requested.
+   * @returns State, progress, result and failure reason of the job.
+   */
   @ApiOperation({ summary: 'Trạng thái job xuất báo cáo' })
   @Get('orders/:jobId')
   status(@Param('jobId') jobId: string) {
     return this.reportService.status(jobId);
   }
 
-  // Tải qua API chứ không phát URL storage: file chứa email/điện thoại/địa chỉ
-  // của mọi khách hàng, phải đi qua guard ADMIN mới lấy được.
+  /**
+   * Downloads the finished report file.
+   *
+   * @param jobId - Job id of a completed export.
+   * @returns The xlsx file as a downloadable attachment.
+   */
   @ApiOperation({ summary: 'Tải file báo cáo (.xlsx) khi job đã xong' })
   @Get('orders/:jobId/download')
-  async download(@Param('jobId') jobId: string): Promise<StreamableFile> {
-    const { buffer, filename } = await this.reportService.download(jobId);
-
-    return new StreamableFile(buffer, {
-      type: XLSX_MIME,
-      disposition: `attachment; filename="${filename}"`,
-    });
+  download(@Param('jobId') jobId: string): Promise<StreamableFile> {
+    return this.reportService.download(jobId);
   }
 }

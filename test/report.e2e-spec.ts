@@ -9,10 +9,11 @@ import {
   seedUser,
 } from './test-helpers';
 
-// REPORT_QUEUE_ENABLED không bật trong .env.test, nên bộ này kiểm phần HTTP:
-// phân quyền, validate, và cách hệ thống từ chối khi thiếu hàng đợi. Phần dựng
-// file (CPU, chạy trong worker thread) được kiểm ở src/report/orders-sheet.spec.ts.
-describe('Report (e2e) — xuất báo cáo đơn hàng', () => {
+// REPORT_QUEUE_ENABLED is off in .env.test, so this suite covers the HTTP side:
+// authorization, validation, and how the system refuses when the queue is
+// missing. Building the file (CPU work on a worker thread) is covered by
+// src/report/orders-sheet.spec.ts.
+describe('Report (e2e) — orders report export', () => {
   let app: INestApplication;
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
@@ -33,17 +34,17 @@ describe('Report (e2e) — xuất báo cáo đơn hàng', () => {
     return token ? req.set(auth(token)) : req;
   };
 
-  it('không có token -> 401', async () => {
+  it('rejects a request without a token with 401', async () => {
     await requestReport().send({}).expect(401);
   });
 
-  it('user thường -> 403, không được xuất dữ liệu toàn hệ thống', async () => {
+  it('rejects a regular user with 403: no system-wide data export', async () => {
     const member = await seedUser(app, { email: 'member@e2e.local' });
 
     await requestReport(member.accessToken).send({}).expect(403);
   });
 
-  it('admin nhưng chưa bật hàng đợi -> 503 chứ không dựng file ngay trong request', async () => {
+  it('answers 503 for an admin when the queue is off, rather than building the file inside the request', async () => {
     const admin = await seedUser(app, {
       email: 'admin@e2e.local',
       roles: [RoleName.ADMIN],
@@ -54,7 +55,7 @@ describe('Report (e2e) — xuất báo cáo đơn hàng', () => {
     expect(body<ErrorBody>(res).errors.body[0]).toMatch(/queue/i);
   });
 
-  it('ngày sai định dạng -> 400 trước khi chạm tới hàng đợi', async () => {
+  it('answers 400 for a malformed date before reaching the queue', async () => {
     const admin = await seedUser(app, {
       email: 'admin2@e2e.local',
       roles: [RoleName.ADMIN],
@@ -67,7 +68,7 @@ describe('Report (e2e) — xuất báo cáo đơn hàng', () => {
     expect(body<ErrorBody>(res).errors.body.join(' ')).toMatch(/from/);
   });
 
-  it('status không thuộc enum -> 400', async () => {
+  it('answers 400 for a status outside the enum', async () => {
     const admin = await seedUser(app, {
       email: 'admin3@e2e.local',
       roles: [RoleName.ADMIN],
@@ -78,7 +79,7 @@ describe('Report (e2e) — xuất báo cáo đơn hàng', () => {
       .expect(400);
   });
 
-  it('tra trạng thái job khi chưa bật hàng đợi -> 503', async () => {
+  it('answers 503 when polling job status while the queue is off', async () => {
     const admin = await seedUser(app, {
       email: 'admin4@e2e.local',
       roles: [RoleName.ADMIN],
@@ -90,9 +91,10 @@ describe('Report (e2e) — xuất báo cáo đơn hàng', () => {
       .expect(503);
   });
 
-  // File báo cáo chứa email/điện thoại/địa chỉ của mọi khách hàng nên KHÔNG
-  // được phát URL storage; đường tải duy nhất phải đi qua guard ADMIN.
-  it('tải file: user thường -> 403', async () => {
+  // The report file holds the email, phone number and address of every
+  // customer, so no storage URL may be handed out: the only download path has
+  // to pass the ADMIN guard.
+  it('download: rejects a regular user with 403', async () => {
     const member = await seedUser(app, { email: 'member2@e2e.local' });
 
     await http(app)
@@ -101,7 +103,7 @@ describe('Report (e2e) — xuất báo cáo đơn hàng', () => {
       .expect(403);
   });
 
-  it('tải file: không token -> 401', async () => {
+  it('download: rejects a request without a token with 401', async () => {
     await http(app).get('/admin/reports/orders/1/download').expect(401);
   });
 });

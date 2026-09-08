@@ -4,34 +4,32 @@ import {
   NotFoundException,
   Optional,
   ServiceUnavailableException,
+  StreamableFile,
 } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { I18nService } from 'nestjs-i18n';
+import { REPORT_JOB_OPTIONS } from '../queue/queue.constant';
 import { StorageService } from '../upload/storage.service';
 import { OrderReportDto } from './dto/order-report.dto';
-import { OrderReportResult, REPORT_QUEUE, ReportJob } from './report.constant';
-
-export interface ReportJobStatus {
-  jobId: string;
-  state: string;
-  progress: number;
-  result: OrderReportResult | null;
-  failedReason: string | null;
-}
-
-export interface ReportDownload {
-  buffer: Buffer;
-  filename: string;
-}
+import { REPORT_QUEUE, ReportJob, XLSX_MIME } from './report.constant';
+import { OrderReportResult, ReportJobStatus } from './report.interface';
 
 @Injectable()
 export class ReportService {
   constructor(
-    private i18n: I18nService,
-    private storage: StorageService,
-    @Optional() @InjectQueue(REPORT_QUEUE) private queue?: Queue,
+    private readonly i18n: I18nService,
+    private readonly storage: StorageService,
+    @Optional() @InjectQueue(REPORT_QUEUE) private readonly queue?: Queue,
   ) {}
 
+  /**
+   * Queues an orders export and returns straight away.
+   *
+   * @param dto - Date range and status filters for the export.
+   * @param requestedBy - Id of the admin asking for the report.
+   * @returns The id of the queued job, used to poll status and download.
+   * @throws {ServiceUnavailableException} When the report queue is disabled.
+   */
   async requestOrderReport(
     dto: OrderReportDto,
     requestedBy: string,
@@ -39,19 +37,20 @@ export class ReportService {
     const job = await this.requireQueue().add(
       ReportJob.ORDERS_XLSX,
       { ...dto, requestedBy },
-      {
-        attempts: 2,
-        backoff: { type: 'exponential', delay: 5000 },
-        // Giữ job đã xong 24h: client phải đọc lại được URL file sau khi job kết
-        // thúc, xoá ngay là mất luôn kết quả.
-        removeOnComplete: { age: 24 * 60 * 60, count: 200 },
-        removeOnFail: { age: 24 * 60 * 60, count: 200 },
-      },
+      REPORT_JOB_OPTIONS,
     );
 
     return { jobId: String(job.id) };
   }
 
+  /**
+   * Reads the current state of a queued export.
+   *
+   * @param jobId - Job id returned by {@link ReportService.requestOrderReport}.
+   * @returns State, progress, result and failure reason of the job.
+   * @throws {NotFoundException} When the job is unknown or past its retention.
+   * @throws {ServiceUnavailableException} When the report queue is disabled.
+   */
   async status(jobId: string): Promise<ReportJobStatus> {
     const job = await this.requireQueue().getJob(jobId);
 
@@ -68,9 +67,19 @@ export class ReportService {
     };
   }
 
-  // File tải qua đây chứ không qua URL công khai: request phải đi qua
-  // JwtAuthGuard + RolesGuard(ADMIN) mới lấy được dữ liệu khách hàng.
-  async download(jobId: string): Promise<ReportDownload> {
+  /**
+   * Streams the finished report back to the caller.
+   *
+   * The file is served through here rather than a storage URL: the request has
+   * to pass `JwtAuthGuard` + `RolesGuard(ADMIN)` before any customer data is
+   * read.
+   *
+   * @param jobId - Job id of a completed export.
+   * @returns The xlsx file as a downloadable attachment.
+   * @throws {NotFoundException} When the job is unknown, has not finished, or
+   * its file has already been cleaned up.
+   */
+  async download(jobId: string): Promise<StreamableFile> {
     const status = await this.status(jobId);
 
     if (status.state !== 'completed' || !status.result) {
@@ -83,11 +92,22 @@ export class ReportService {
       throw new NotFoundException(this.i18n.t('report.FILE_GONE'));
     }
 
-    return { buffer, filename: `orders-${jobId}.xlsx` };
+    return new StreamableFile(buffer, {
+      type: XLSX_MIME,
+      disposition: `attachment; filename="orders-${jobId}.xlsx"`,
+    });
   }
 
-  // Không có fallback "dựng file ngay trong request": file xlsx là CPU-bound
-  // đồng bộ, làm trong request là chặn cả API — đúng thứ queue sinh ra để tránh.
+  /**
+   * Returns the report queue, or fails loudly when it is not configured.
+   *
+   * There is deliberately no "build it inline" fallback: an xlsx is synchronous
+   * CPU work, and doing it inside a request blocks the whole API, which is
+   * exactly what the queue exists to avoid.
+   *
+   * @returns The injected BullMQ queue.
+   * @throws {ServiceUnavailableException} When the report queue is disabled.
+   */
   private requireQueue(): Queue {
     if (!this.queue) {
       throw new ServiceUnavailableException(

@@ -2,28 +2,31 @@ import { Injectable } from '@nestjs/common';
 import { toNumber } from '../common/utils/money.util';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { OrderReportRow } from './orders-sheet';
-import { MAX_REPORT_ROWS, OrderReportPayload } from './report.constant';
-
-export interface CollectedOrders {
-  rows: OrderReportRow[];
-  // true = còn đơn khớp điều kiện nhưng bị cắt vì vượt MAX_REPORT_ROWS.
-  truncated: boolean;
-}
+import { MAX_REPORT_ROWS } from './report.constant';
+import { CollectedOrders, OrderReportPayload } from './report.interface';
 
 @Injectable()
 export class OrderReportSource {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  // Toàn bộ I/O nằm ở đây, trong process chính, để dùng chung một connection
-  // pool của Prisma. Worker thread chỉ nhận mảng đã làm phẳng.
+  /**
+   * Reads the orders matching the report filters and flattens them for the
+   * worker thread.
+   *
+   * All I/O lives here, in the main process, so a single Prisma connection pool
+   * is shared. The worker thread only ever receives the flattened rows.
+   *
+   * @param payload - Date range and status filters of the report.
+   * @returns The rows to render, plus whether they were cut at
+   * {@link MAX_REPORT_ROWS}.
+   */
   async collect(payload: OrderReportPayload): Promise<CollectedOrders> {
     const orders = await this.prisma.order.findMany({
       where: this.buildWhere(payload),
       orderBy: { createdAt: 'desc' },
-      // Lấy thừa 1 dòng để biết có bị cắt hay không. Cắt mà báo "completed"
-      // với đúng MAX_REPORT_ROWS dòng thì admin không phân biệt được báo cáo
-      // đầy đủ và báo cáo thiếu.
+      // Fetch one extra row to detect truncation. Cutting the result while
+      // still reporting "completed" with exactly MAX_REPORT_ROWS rows would
+      // leave the admin unable to tell a full report from a partial one.
       take: MAX_REPORT_ROWS + 1,
       select: {
         orderCode: true,
@@ -53,23 +56,29 @@ export class OrderReportSource {
       shippingPhone: order.shippingPhone,
       shippingAddress: order.shippingAddress,
       itemCount: order._count.items,
-      // Decimal của Prisma không đi qua structured clone sang thread được,
-      // đổi sang number ngay tại đây.
+      // Prisma Decimal cannot be structured-cloned into the thread, so it is
+      // converted to a number right here.
       totalAmount: toNumber(order.totalAmount),
     }));
 
     return { rows, truncated };
   }
 
+  /**
+   * Translates the report filters into a Prisma `where` clause.
+   *
+   * @param payload - Date range and status filters of the report.
+   * @returns The `where` clause; empty when no filter was supplied.
+   */
   private buildWhere(payload: OrderReportPayload): Prisma.OrderWhereInput {
     const createdAt: Prisma.DateTimeFilter = {};
 
     if (payload.from) createdAt.gte = new Date(payload.from);
 
-    // "to" chỉ có ngày (2026-12-31) được Date hiểu là 00:00 ngày đó, nên
-    // lte sẽ loại hết đơn trong chính ngày cuối của khoảng. Chuyển thành
-    // "nhỏ hơn 00:00 ngày kế tiếp" để lấy trọn ngày cuối. Có kèm giờ thì
-    // người gọi đã nói rõ mốc, giữ nguyên lte.
+    // A date-only "to" (2026-12-31) is parsed as midnight, so `lte` would drop
+    // every order made during that last day. Turn it into "before midnight of
+    // the next day" to cover the whole day. When a time is supplied the caller
+    // meant that exact instant, so `lte` is kept.
     if (payload.to) {
       if (payload.to.includes('T')) {
         createdAt.lte = new Date(payload.to);
