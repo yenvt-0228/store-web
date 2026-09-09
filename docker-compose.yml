@@ -32,6 +32,49 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: store-web-kafka
+    restart: unless-stopped
+    ports:
+      - '9092:9092'
+    environment:
+      # KRaft: one node is both broker and controller, no ZooKeeper needed.
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # Two listeners: 9092 for the app (host), 29092 for containers on this
+      # network. Advertising only localhost would break any container client.
+      # Empty host, not 0.0.0.0: Kafka advertises the controller listener as it
+      # is written here and refuses to advertise the meta-address.
+      KAFKA_LISTENERS: HOST://:9092,DOCKER://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: HOST://localhost:9092,DOCKER://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: HOST:PLAINTEXT,DOCKER:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: DOCKER
+      # A single broker cannot replicate: the defaults of 3 would leave the
+      # internal topics stuck as under-replicated.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      # Must match the volume below. The image defaults to
+      # /tmp/kraft-combined-logs, which would leave the volume empty and drop
+      # every topic, message and offset on `docker compose down`.
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: store-web-local-cluster
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          '/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1',
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
 volumes:
   redis-data:
   minio-data:
+  kafka-data:

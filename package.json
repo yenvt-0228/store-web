@@ -48,6 +48,7 @@
     "google-auth-library": "^11.0.2",
     "handlebars": "^4.7.9",
     "ioredis": "^6.0.0",
+    "kafkajs": "^2.2.4",
     "nestjs-i18n": "^10.8.5",
     "nodemailer": "^9.0.5",
     "passport": "^0.7.0",

@@ -14,6 +14,7 @@ import { AppService } from './app.service';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { CategoryModule } from './category/category.module';
+import { KafkaModule } from './kafka/kafka.module';
 import { MailModule } from './mail/mail.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { QueueModule } from './queue/queue.module';
@@ -49,6 +50,7 @@ import { PaymentModule } from './payment/payment.module';
     PrismaModule,
     RedisModule,
     QueueModule.register(),
+    KafkaModule.register(),
     MailModule.register(),
     AuthModule,
     UserModule,

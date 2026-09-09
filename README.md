@@ -280,6 +280,29 @@ chạy chế độ dev. Muốn dùng MinIO thì điền nhóm biến `S3_*` tron
 `S3_PUBLIC_URL=http://127.0.0.1:9000/store-demo`). Đổi sang R2/S3 production chỉ là đổi
 mấy biến này, không đụng code.
 
+### Kafka (bus sự kiện domain)
+
+```bash
+docker compose up -d kafka    # broker KRaft, không cần ZooKeeper, :9092
+```
+
+Rồi bật trong `.env`:
+
+```bash
+KAFKA_ENABLED=true
+KAFKA_BROKERS=localhost:9092
+```
+
+`KAFKA_ENABLED=false` (mặc định) thì `KafkaModule.register()` trả về module rỗng —
+không nạp provider nào, không mở kết nối nào, app chạy đúng như trước khi có Kafka.
+
+Xem message đang có trong topic:
+
+```bash
+docker exec store-web-kafka /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 --topic store.order.events --from-beginning
+```
+
 ### Email khi dev
 
 Để trống `SMTP_HOST` → **không gửi thật**, nội dung mail (kèm link kích hoạt /
@@ -425,6 +448,63 @@ Hai chi tiết dễ vấp:
 Không bật `REPORT_QUEUE_ENABLED` thì endpoint trả **503** chứ không âm thầm dựng file
 trong request — dựng ngay trong request đúng là thứ cần tránh.
 
+### Kafka: bus sự kiện, không phải hàng đợi job
+
+Kafka **không thay** BullMQ. Hai thứ giải hai bài toán khác nhau, nên cùng tồn tại:
+
+| | BullMQ (Redis) | Kafka |
+| --- | --- | --- |
+| Dùng cho | việc nền **của chính app này** (gửi mail, dựng file báo cáo) | sự kiện domain cho **service khác** đọc |
+| Message đọc xong | biến mất khỏi queue | vẫn nằm trong topic (retention), consumer mới đọc lại được từ đầu |
+| Thất bại | có `attempts`, backoff, failed set, tra được trạng thái từng job | offset đi tiếp, không có khái niệm "job hỏng" |
+
+Tức là: cần **thử lại và biết job nào hỏng** thì dùng BullMQ; cần **phát tán một
+chuyện đã xảy ra** cho bên khác thì dùng Kafka.
+
+**Service không biết Kafka tồn tại.** `OrderService` vẫn `events.emit(OrderEvent.CREATED, ...)`
+như cũ; [KafkaEventPublisher](src/kafka/kafka.publisher.ts) nghe event nội bộ đó rồi
+đẩy lên topic. Nhờ vậy tắt `KAFKA_ENABLED` là gỡ sạch tích hợp mà không đụng một dòng
+nào trong service.
+
+**Chỉ mirror event đơn hàng, cố ý bỏ event mail.** Mail event mang theo token kích hoạt
+và token reset mật khẩu — một topic mà service khác đọc được không phải chỗ để credential
+nằm.
+
+**Một topic cho mỗi aggregate, key là mã đơn.** `store.order.events` chứa cả
+`order.created`/`confirmed`/`rejected`; cùng key thì Kafka xếp cùng partition, nên
+consumer không bao giờ thấy `order.confirmed` trước `order.created`. Tên event nằm trong
+envelope cùng `eventId` (để dedupe — Kafka giao *ít nhất một lần*) và `occurredAt`.
+
+**Publish hỏng không làm hỏng request.** Kafka ở đây là kênh phụ, không phải nguồn sự
+thật: `KafkaProducer.publish()` có timeout 3s, lỗi thì ghi log rồi thôi — giống cách
+`MailDispatcher` xử lý khi queue chết.
+
+**Ai produce, ai consume** — cùng nguyên tắc với `MailModule`:
+
+| `APP_ROLE` | Produce | Consume |
+| --- | --- | --- |
+| `all` | có | có |
+| `api` | có | **không** |
+| `worker` | có | có |
+
+Process API mà cũng consume thì scale lên 3 replica là mỗi message được xử lý 3 lần.
+
+**Consumer thử lại mãi khi broker chưa lên.** Bỏ cuộc ngay lúc boot là tệ nhất: worker
+vẫn "chạy bình thường" trong khi không xử lý gì cả. Ngược lại, một message hỏng
+(JSON sai, handler ném lỗi) thì ghi log rồi **đi tiếp** — ném lỗi ra sẽ khiến kafkajs
+đọc lại message đó vô hạn và chặn cả partition phía sau.
+
+**Topic được tạo lúc khởi động.** Subscribe vào topic chưa từng có message sẽ lỗi
+`this server does not host this topic-partition`, nên `ensureTopics()` tạo trước (mặc
+định 3 partition, đổi bằng `KAFKA_TOPIC_PARTITIONS`). Nó `listTopics()` rồi mới tạo
+phần còn thiếu — gọi thẳng `createTopics` trên topic đã có sẽ ghi log lỗi mỗi lần boot.
+
+**Thêm một loại event mới** cần ba bước: thêm tên vào `KafkaEventName`
+([kafka.constant.ts](src/kafka/kafka.constant.ts)), thêm một `@OnEvent` trong
+[kafka.publisher.ts](src/kafka/kafka.publisher.ts), và bên nhận thì nghe
+`@OnEvent('kafka.<tên event>')` — tiền tố `kafka.` là bắt buộc, không có nó thì handler
+chạy cả với event nội bộ lẫn message Kafka do chính nó sinh ra, mọi side effect chạy đôi.
+
 ## Test
 
 ```bash
@@ -567,6 +647,7 @@ src/
 ├── common/         # dùng chung: guard RBAC, DTO phân trang, validator, event
 ├── generated/      # Prisma Client (sinh tự động — không sửa tay)
 ├── i18n/           # thông báo song ngữ en/vi
+├── kafka/          # bus sự kiện domain: producer, consumer, bridge event nội bộ
 ├── mail/           # nodemailer + BullMQ + listener theo event
 ├── cart/           # giỏ hàng — CHỈ nằm trong Redis, không có bảng
 ├── category/       # danh mục sản phẩm (admin CRUD)

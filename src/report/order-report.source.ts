@@ -5,6 +5,41 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MAX_REPORT_ROWS } from './report.constant';
 import { CollectedOrders, OrderReportPayload } from './report.interface';
 
+// ISO 8601 allows both "2026-12-31T10:30" and "2026-12-31 10:30", and the DTO
+// accepts both. Looking for a "T" alone would read the second one as a bare
+// date and push the boundary a full day forward.
+const TIME_PART = /[T ]\d{2}:\d{2}/;
+
+function hasTime(value: string): boolean {
+  return TIME_PART.test(value);
+}
+
+/**
+ * Turns a report boundary into a Date.
+ *
+ * The DTO already rejects the shapes that parse to Invalid Date, so this only
+ * catches what it cannot see (month 13, day 32) and payloads built elsewhere.
+ * Without it an Invalid Date reaches Prisma, which fails the job three times
+ * over with an error naming neither the field nor the value.
+ *
+ * @param value - Raw boundary as it came from the request.
+ * @param field - Field name, used in the error message.
+ * @returns The parsed date.
+ * @throws {Error} When `value` does not parse to a real date.
+ */
+function parseBoundary(value: string, field: 'from' | 'to'): Date {
+  // A space-separated time is not the ISO form `new Date()` parses reliably.
+  const parsed = new Date(value.replace(' ', 'T'));
+
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(
+      `Report filter "${field}" is not a valid date: "${value}".`,
+    );
+  }
+
+  return parsed;
+}
+
 @Injectable()
 export class OrderReportSource {
   constructor(private readonly prisma: PrismaService) {}
@@ -73,19 +108,20 @@ export class OrderReportSource {
   private buildWhere(payload: OrderReportPayload): Prisma.OrderWhereInput {
     const createdAt: Prisma.DateTimeFilter = {};
 
-    if (payload.from) createdAt.gte = new Date(payload.from);
+    if (payload.from) createdAt.gte = parseBoundary(payload.from, 'from');
 
     // A date-only "to" (2026-12-31) is parsed as midnight, so `lte` would drop
     // every order made during that last day. Turn it into "before midnight of
     // the next day" to cover the whole day. When a time is supplied the caller
     // meant that exact instant, so `lte` is kept.
     if (payload.to) {
-      if (payload.to.includes('T')) {
-        createdAt.lte = new Date(payload.to);
+      const to = parseBoundary(payload.to, 'to');
+
+      if (hasTime(payload.to)) {
+        createdAt.lte = to;
       } else {
-        const next = new Date(payload.to);
-        next.setUTCDate(next.getUTCDate() + 1);
-        createdAt.lt = next;
+        to.setUTCDate(to.getUTCDate() + 1);
+        createdAt.lt = to;
       }
     }
 
