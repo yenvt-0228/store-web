@@ -26,7 +26,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - name: Cài dependency
+      - name: Install dependencies
         run: npm ci
 
       - name: Sinh Prisma Client
@@ -34,6 +34,9 @@ jobs:
 
       - name: Lint
         run: npm run lint:ci
+
+      - name: Typecheck
+        run: npm run typecheck
 
       - name: Build
         run: npm run build
@@ -79,13 +82,13 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - name: Cài dependency
+      - name: Install dependencies
         run: npm ci
 
       - name: Sinh Prisma Client
         run: npx prisma generate
 
-      - name: Tạo .env.test trỏ vào Postgres của runner
+      - name: Write .env.test pointing at the runner Postgres
         run: |
           cat > .env.test <<'EOF'
           NODE_ENV=test
@@ -97,6 +100,7 @@ jobs:
           EMAIL_VERIFICATION_TTL_HOURS=24
           PASSWORD_RESET_TTL_MINUTES=60
           MAIL_QUEUE_ENABLED=false
+          APP_ROLE=all
           PAYMENT_CALLBACK_SECRET=ci-callback-secret
           SMTP_HOST=
           REDIS_HOST=127.0.0.1

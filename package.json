@@ -12,6 +12,9 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
+    "start:worker": "APP_ROLE=worker nest start --entryFile main.worker",
+    "start:worker:dev": "APP_ROLE=worker nest start --watch --entryFile main.worker",
+    "start:worker:prod": "APP_ROLE=worker node dist/main.worker",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
@@ -20,7 +23,8 @@
     "test": "jest",
     "db:seed": "nest build && node dist/prisma/seed.js",
     "db:migrate": "prisma migrate dev",
-    "lint:ci": "eslint \"{src,test}/**/*.ts\""
+    "lint:ci": "eslint \"{src,test}/**/*.ts\"",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1115.0",
@@ -40,6 +44,7 @@
     "bullmq": "^6.1.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "exceljs": "^4.4.0",
     "google-auth-library": "^11.0.2",
     "handlebars": "^4.7.9",
     "ioredis": "^6.0.0",

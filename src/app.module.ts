@@ -16,6 +16,8 @@ import { AuthModule } from './auth/auth.module';
 import { CategoryModule } from './category/category.module';
 import { MailModule } from './mail/mail.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { QueueModule } from './queue/queue.module';
+import { ReportModule } from './report/report.module';
 import { RedisModule } from './redis/redis.module';
 import { TasksModule } from './tasks/tasks.module';
 import { UploadModule } from './upload/upload.module';
@@ -31,7 +33,7 @@ import { PaymentModule } from './payment/payment.module';
       isGlobal: true,
     }),
     I18nModule.forRoot({
-      fallbackLanguage: 'en', // ngôn ngữ
+      fallbackLanguage: 'en', // language used when the request asks for none
       loaderOptions: {
         path: join(__dirname, '/i18n/'),
         watch: true,
@@ -46,6 +48,7 @@ import { PaymentModule } from './payment/payment.module';
     ScheduleModule.forRoot(),
     PrismaModule,
     RedisModule,
+    QueueModule.register(),
     MailModule.register(),
     AuthModule,
     UserModule,
@@ -56,7 +59,8 @@ import { PaymentModule } from './payment/payment.module';
     CartModule,
     OrderModule,
     PaymentModule,
-    TasksModule,
+    ReportModule.register(),
+    TasksModule.register(),
   ],
   controllers: [AppController],
   providers: [AppService],

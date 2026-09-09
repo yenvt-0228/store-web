@@ -1,0 +1,6 @@
+{
+  "QUEUE_DISABLED": "Chức năng xuất báo cáo cần hàng đợi. Bật REPORT_QUEUE_ENABLED=true và chạy process worker.",
+  "JOB_NOT_FOUND": "Không tìm thấy job xuất báo cáo (có thể đã hết hạn lưu 24 giờ)",
+  "NOT_READY": "Báo cáo chưa xong hoặc đã thất bại — kiểm tra trạng thái job trước khi tải",
+  "FILE_GONE": "File báo cáo không còn trên storage (đã bị dọn sau 24 giờ)"
+}

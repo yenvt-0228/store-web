@@ -26,7 +26,7 @@ services:
       - '9000:9000'
       - '9001:9001'
     volumes:
-      - minio-data:/data          # dữ liệu sống sót cả khi xoá container
+      - minio-data:/data          # data survives removing the container
     healthcheck:
       test: ['CMD', 'mc', 'ready', 'local']
       interval: 10s
