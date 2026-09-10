@@ -67,6 +67,50 @@ describe('OrderReportSource.collect', () => {
     );
   });
 
+  it('a space-separated "to" is a time, not a bare date pushed a day forward', async () => {
+    const { source, findMany } = sourceReturning(1);
+
+    // @IsISO8601 accepted this form and the old check looked for a "T" only,
+    // so it fell into the date-only branch and widened the report by a day.
+    await source.collect({
+      requestedBy: 'admin',
+      to: '2026-12-31 10:30:00Z',
+    });
+
+    const createdAt = argsOf(findMany).where.createdAt as Prisma.DateTimeFilter;
+
+    expect(createdAt.lt).toBeUndefined();
+    expect((createdAt.lte as Date).toISOString()).toBe(
+      '2026-12-31T10:30:00.000Z',
+    );
+  });
+
+  it('rejects a date that cannot be parsed instead of handing Invalid Date to Prisma', async () => {
+    const { source, findMany } = sourceReturning(1);
+
+    await expect(
+      source.collect({ requestedBy: 'admin', to: '2026-13-45' }),
+    ).rejects.toThrow('not a valid date');
+
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects a day that does not exist rather than letting Date roll it over', async () => {
+    // `new Date('2026-02-31')` is NOT Invalid Date — it silently becomes 3 March,
+    // so a NaN check alone would widen the report by three days without a word.
+    const { source, findMany } = sourceReturning(1);
+
+    await expect(
+      source.collect({ requestedBy: 'admin', to: '2026-02-31' }),
+    ).rejects.toThrow('not a valid date');
+
+    await expect(
+      source.collect({ requestedBy: 'admin', from: '2027-02-29' }),
+    ).rejects.toThrow('not a valid date');
+
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
   it('keeps "from" as gte', async () => {
     const { source, findMany } = sourceReturning(1);
 

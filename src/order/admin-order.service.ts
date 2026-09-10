@@ -14,6 +14,8 @@ import {
   OrderStatus,
   PaymentMethod,
 } from '../generated/prisma/enums';
+import { KafkaEventName, KafkaTopic } from '../kafka/kafka.constant';
+import { OutboxService } from '../outbox/outbox.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { adminOrderInclude, toOrderResponse } from './dto/order-response.dto';
 import { ListOrderDto } from './dto/list-order.dto';
@@ -25,6 +27,18 @@ import {
   shouldRestoreStock,
 } from './order-state';
 
+/**
+ * Statuses that are mirrored onto Kafka, and under which name.
+ *
+ * Deliberately only two: the other transitions have no listener outside this
+ * application, and a topic other services read is not the place to publish
+ * everything just because it is available.
+ */
+const KAFKA_EVENT_BY_STATUS: Partial<Record<OrderStatus, KafkaEventName>> = {
+  [OrderStatus.CONFIRMED]: KafkaEventName.ORDER_CONFIRMED,
+  [OrderStatus.REJECTED]: KafkaEventName.ORDER_REJECTED,
+};
+
 @Injectable()
 export class AdminOrderService {
   constructor(
@@ -32,6 +46,7 @@ export class AdminOrderService {
     private orderService: OrderService,
     private i18n: I18nService,
     private events: EventEmitter2,
+    private outbox: OutboxService,
   ) {}
 
   async findAll(query: ListOrderDto) {
@@ -87,12 +102,12 @@ export class AdminOrderService {
       throw new BadRequestException(this.i18n.t('order.REASON_REQUIRED'));
     }
 
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const { updated, payload } = await this.prisma.$transaction(async (tx) => {
       if (shouldRestoreStock(dto.status)) {
         await this.orderService.restoreStock(tx, order.items);
       }
 
-      return tx.order.update({
+      const result = await tx.order.update({
         where: { id },
         data: {
           status: dto.status,
@@ -115,15 +130,33 @@ export class AdminOrderService {
         },
         include: adminOrderInclude,
       });
+
+      const event = {
+        email: result.user.email,
+        name: result.shippingName,
+        orderCode: result.orderCode,
+        reason: dto.reason ?? '',
+        locale: toLocale(result.user.locale),
+      };
+
+      const eventName = KAFKA_EVENT_BY_STATUS[result.status];
+
+      // Trong cùng transaction với chính lần đổi trạng thái: đơn đã CONFIRMED
+      // trong DB mà event không lên được topic thì service khác không bao giờ
+      // biết. OutboxRelay gửi sau, và có retry.
+      if (eventName) {
+        await this.outbox.record(tx, {
+          topic: KafkaTopic.ORDER,
+          key: result.orderCode,
+          eventName,
+          payload: event,
+        });
+      }
+
+      return { updated: result, payload: event };
     });
 
-    this.notify(updated.status, {
-      email: updated.user.email,
-      name: updated.shippingName,
-      orderCode: updated.orderCode,
-      reason: dto.reason ?? '',
-      locale: toLocale(updated.user.locale),
-    });
+    this.notify(updated.status, payload);
 
     return toOrderResponse(updated);
   }
