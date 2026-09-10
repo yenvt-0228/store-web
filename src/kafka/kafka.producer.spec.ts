@@ -9,8 +9,16 @@ function fakeKafkaService(producer: {
 }) {
   return {
     ensureTopics: jest.fn().mockResolvedValue(undefined),
-    client: { producer: () => producer },
+    createProducer: () => producer,
   } as unknown as KafkaService;
+}
+
+function sentMessage(send: jest.Mock) {
+  return (
+    send.mock.calls as [
+      { topic: string; messages: { key: string; value: string }[] },
+    ][]
+  )[0][0];
 }
 
 describe('KafkaProducer', () => {
@@ -23,21 +31,15 @@ describe('KafkaProducer', () => {
       }),
     );
 
-    await producer.publish(
-      KafkaTopic.ORDER,
-      'DH-001',
-      KafkaEventName.ORDER_CREATED,
-      {
-        orderCode: 'DH-001',
-      },
-    );
+    await producer.publish({
+      topic: KafkaTopic.ORDER,
+      key: 'DH-001',
+      eventName: KafkaEventName.ORDER_CREATED,
+      payload: { orderCode: 'DH-001' },
+    });
 
     expect(send).toHaveBeenCalledTimes(1);
-    const sent = (
-      send.mock.calls as [
-        { topic: string; messages: { key: string; value: string }[] },
-      ][]
-    )[0][0];
+    const sent = sentMessage(send);
     expect(sent.topic).toBe(KafkaTopic.ORDER);
     // Same key for every message about one order keeps them in one partition,
     // so `confirmed` can never overtake `created`.
@@ -50,25 +52,51 @@ describe('KafkaProducer', () => {
     });
   });
 
-  it('never throws when the broker is down', async () => {
-    // A dead broker must not fail the request that produced the event: Kafka is
-    // a side channel here, not the source of truth.
+  it('publishes under the caller’s event id, so a replay is recognisable', async () => {
+    // The outbox passes its row id. A row whose send succeeded but was never
+    // marked sent is published again with the same id, and the consumer drops
+    // the duplicate instead of running every handler twice.
+    const send = jest.fn().mockResolvedValue([]);
+    const producer = new KafkaProducer(
+      fakeKafkaService({
+        connect: jest.fn().mockResolvedValue(undefined),
+        send,
+      }),
+    );
+
+    await producer.publish({
+      topic: KafkaTopic.ORDER,
+      key: 'DH-001',
+      eventName: KafkaEventName.ORDER_CREATED,
+      payload: {},
+      eventId: 'outbox-row-1',
+      occurredAt: '2026-09-10T00:00:00.000Z',
+    });
+
+    expect(JSON.parse(sentMessage(send).messages[0].value)).toMatchObject({
+      eventId: 'outbox-row-1',
+      occurredAt: '2026-09-10T00:00:00.000Z',
+    });
+  });
+
+  it('throws when the broker is down, instead of reporting a lost event as sent', async () => {
+    // The outbox relay is the only caller: swallowing the failure here would
+    // make it mark the row SENT and lose the event for good.
     const producer = new KafkaProducer(
       fakeKafkaService({
         connect: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')),
         send: jest.fn(),
       }),
     );
-    jest.spyOn(producer['logger'], 'error').mockImplementation(() => undefined);
 
     await expect(
-      producer.publish(
-        KafkaTopic.ORDER,
-        'DH-001',
-        KafkaEventName.ORDER_CREATED,
-        {},
-      ),
-    ).resolves.toBeUndefined();
+      producer.publish({
+        topic: KafkaTopic.ORDER,
+        key: 'DH-001',
+        eventName: KafkaEventName.ORDER_CREATED,
+        payload: {},
+      }),
+    ).rejects.toThrow('ECONNREFUSED');
   });
 
   it('connects once when several publishes race', async () => {
@@ -77,11 +105,15 @@ describe('KafkaProducer', () => {
       fakeKafkaService({ connect, send: jest.fn().mockResolvedValue([]) }),
     );
 
-    await Promise.all([
-      producer.publish(KafkaTopic.ORDER, 'a', KafkaEventName.ORDER_CREATED, {}),
-      producer.publish(KafkaTopic.ORDER, 'b', KafkaEventName.ORDER_CREATED, {}),
-      producer.publish(KafkaTopic.ORDER, 'c', KafkaEventName.ORDER_CREATED, {}),
-    ]);
+    const publish = (key: string) =>
+      producer.publish({
+        topic: KafkaTopic.ORDER,
+        key,
+        eventName: KafkaEventName.ORDER_CREATED,
+        payload: {},
+      });
+
+    await Promise.all([publish('a'), publish('b'), publish('c')]);
 
     expect(connect).toHaveBeenCalledTimes(1);
   });

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { parseIsoBoundary } from '../common/utils/date.util';
 import { toNumber } from '../common/utils/money.util';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -17,21 +18,21 @@ function hasTime(value: string): boolean {
 /**
  * Turns a report boundary into a Date.
  *
- * The DTO already rejects the shapes that parse to Invalid Date, so this only
- * catches what it cannot see (month 13, day 32) and payloads built elsewhere.
- * Without it an Invalid Date reaches Prisma, which fails the job three times
- * over with an error naming neither the field nor the value.
+ * `OrderReportDto` already rejects everything this rejects, so in practice it
+ * only guards a payload built somewhere else — a replayed job, a queue entry
+ * written by hand. Kept because the alternative is an Invalid Date reaching
+ * Prisma, which fails the job three times over with an error naming neither the
+ * field nor the value.
  *
  * @param value - Raw boundary as it came from the request.
  * @param field - Field name, used in the error message.
  * @returns The parsed date.
- * @throws {Error} When `value` does not parse to a real date.
+ * @throws {Error} When `value` does not name a real calendar date.
  */
 function parseBoundary(value: string, field: 'from' | 'to'): Date {
-  // A space-separated time is not the ISO form `new Date()` parses reliably.
-  const parsed = new Date(value.replace(' ', 'T'));
+  const parsed = parseIsoBoundary(value);
 
-  if (Number.isNaN(parsed.getTime())) {
+  if (!parsed) {
     throw new Error(
       `Report filter "${field}" is not a valid date: "${value}".`,
     );

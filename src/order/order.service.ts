@@ -12,7 +12,10 @@ import { CartItemIssue } from '../cart/cart.constant';
 import { CartItemView, CartService } from '../cart/cart.service';
 import { paginated } from '../common/dto/paginated-response.dto';
 import { toLocale } from '../common/constants/locale.constant';
-import { OrderEvent } from '../common/events/order.event';
+import {
+  OrderEvent,
+  type OrderCreatedEvent,
+} from '../common/events/order.event';
 import { multiply, sum, toNumber } from '../common/utils/money.util';
 import { Prisma } from '../generated/prisma/client';
 import {
@@ -20,6 +23,8 @@ import {
   OrderStatus,
   ProductStatus,
 } from '../generated/prisma/enums';
+import { KafkaEventName, KafkaTopic } from '../kafka/kafka.constant';
+import { OutboxService } from '../outbox/outbox.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { CreateOrderDto, OrderItemInputDto } from './dto/create-order.dto';
@@ -35,6 +40,7 @@ export class OrderService {
     private cart: CartService,
     private i18n: I18nService,
     private events: EventEmitter2,
+    private outbox: OutboxService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto) {
@@ -55,7 +61,15 @@ export class OrderService {
 
     const totalAmount = sum(orderItems.map((item) => item.subtotal));
 
-    const order = await this.prisma.$transaction(async (tx) => {
+    // Đọc trước khi mở transaction: payload của event nằm trong cùng
+    // transaction với đơn hàng, nên phải có sẵn email/locale trước đó. Đọc sớm
+    // cũng nghĩa là một userId không hợp lệ dừng lại trước khi trừ tồn kho.
+    const recipient = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { email: true, locale: true },
+    });
+
+    const { order, event } = await this.prisma.$transaction(async (tx) => {
       for (const item of orderItems) {
         const updated = await tx.product.updateMany({
           where: {
@@ -76,7 +90,7 @@ export class OrderService {
         }
       }
 
-      return tx.order.create({
+      const created = await tx.order.create({
         data: {
           userId,
           orderCode: this.generateOrderCode(),
@@ -89,6 +103,26 @@ export class OrderService {
         },
         include: orderInclude,
       });
+
+      const payload: OrderCreatedEvent = {
+        email: recipient.email,
+        name: created.shippingName,
+        orderCode: created.orderCode,
+        totalAmount: toNumber(created.totalAmount),
+        locale: toLocale(recipient.locale),
+      };
+
+      // Ghi trong cùng transaction với đơn hàng: hoặc cả hai cùng commit, hoặc
+      // không có gì cả. Publish thẳng lên Kafka ở đây thì đơn đã nằm trong DB
+      // mà event có thể mất khi broker chết — OutboxRelay lo việc gửi sau.
+      await this.outbox.record(tx, {
+        topic: KafkaTopic.ORDER,
+        key: created.orderCode,
+        eventName: KafkaEventName.ORDER_CREATED,
+        payload,
+      });
+
+      return { order: created, event: payload };
     });
 
     if (!dto.items?.length) {
@@ -103,18 +137,9 @@ export class OrderService {
       }
     }
 
-    const recipient = await this.prisma.user.findUniqueOrThrow({
-      where: { id: userId },
-      select: { email: true, locale: true },
-    });
-
-    this.events.emit(OrderEvent.CREATED, {
-      email: recipient.email,
-      name: order.shippingName,
-      orderCode: order.orderCode,
-      totalAmount: toNumber(order.totalAmount),
-      locale: toLocale(recipient.locale),
-    });
+    // Bus nội bộ vẫn giữ nguyên cho mail: nó chạy trong cùng process nên không
+    // có vấn đề dual-write như Kafka.
+    this.events.emit(OrderEvent.CREATED, event);
 
     return toOrderResponse(order);
   }

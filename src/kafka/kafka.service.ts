@@ -1,32 +1,44 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Kafka, logLevel, type LogEntry, type SASLOptions } from 'kafkajs';
-import { KafkaTopic } from './kafka.constant';
-
-const DEFAULT_BROKERS = 'localhost:9092';
-const DEFAULT_CLIENT_ID = 'store-web';
-const DEFAULT_GROUP_ID = 'store-web-api';
-
-const DEFAULT_PARTITIONS = 3;
-const DEFAULT_REPLICATION_FACTOR = 1;
-
-const SASL_MECHANISMS = ['plain', 'scram-sha-256', 'scram-sha-512'] as const;
-
-type SaslMechanism = (typeof SASL_MECHANISMS)[number];
+import {
+  Kafka,
+  logLevel,
+  type Admin,
+  type Consumer,
+  type LogEntry,
+  type Producer,
+  type ProducerConfig,
+  type SASLOptions,
+} from 'kafkajs';
+import {
+  KAFKA_DEFAULT_BROKERS,
+  KAFKA_DEFAULT_CLIENT_ID,
+  KAFKA_DEFAULT_GROUP_ID,
+  KAFKA_DEFAULT_PARTITIONS,
+  KAFKA_DEFAULT_REPLICATION_FACTOR,
+  KAFKA_MANAGED_TOPICS,
+  KAFKA_SASL_MECHANISMS,
+  type KafkaSaslMechanism,
+} from './kafka.constant';
 
 /**
  * Owns the shared `Kafka` client: the producer and the consumer both build
  * themselves from it, so brokers and credentials are read in one place only.
+ *
+ * The client itself stays private — callers ask for a producer or a consumer
+ * and get one configured the same way every time, instead of reaching into the
+ * kafkajs API from three different files.
  */
 @Injectable()
 export class KafkaService {
   private readonly logger = new Logger(KafkaService.name);
-  readonly client: Kafka;
+  private readonly client: Kafka;
   private topicsReady?: Promise<void>;
 
   constructor(private readonly config: ConfigService) {
     this.client = new Kafka({
-      clientId: this.config.get<string>('KAFKA_CLIENT_ID') ?? DEFAULT_CLIENT_ID,
+      clientId:
+        this.config.get<string>('KAFKA_CLIENT_ID') ?? KAFKA_DEFAULT_CLIENT_ID,
       brokers: this.brokers,
       ssl: this.config.get<string>('KAFKA_SSL') === 'true',
       sasl: this.sasl,
@@ -44,7 +56,26 @@ export class KafkaService {
    * side effects twice.
    */
   get groupId(): string {
-    return this.config.get<string>('KAFKA_GROUP_ID') ?? DEFAULT_GROUP_ID;
+    return this.config.get<string>('KAFKA_GROUP_ID') ?? KAFKA_DEFAULT_GROUP_ID;
+  }
+
+  /**
+   * Builds a producer on the shared client.
+   *
+   * @param config - Producer options that differ per caller.
+   * @returns A producer that still has to be connected.
+   */
+  createProducer(config: ProducerConfig): Producer {
+    return this.client.producer(config);
+  }
+
+  /**
+   * Builds a consumer in {@link groupId} on the shared client.
+   *
+   * @returns A consumer that still has to be connected.
+   */
+  createConsumer(): Consumer {
+    return this.client.consumer({ groupId: this.groupId });
   }
 
   /**
@@ -70,7 +101,7 @@ export class KafkaService {
   }
 
   private async createTopics(): Promise<void> {
-    const admin = this.client.admin();
+    const admin: Admin = this.client.admin();
     await admin.connect();
 
     try {
@@ -78,7 +109,7 @@ export class KafkaService {
       // kafkajs logs at error level on every boot; listing first keeps the logs
       // of a normal start clean.
       const existing = await admin.listTopics();
-      const missing = Object.values(KafkaTopic).filter(
+      const missing = KAFKA_MANAGED_TOPICS.filter(
         (topic) => !existing.includes(topic),
       );
 
@@ -91,11 +122,11 @@ export class KafkaService {
           topic,
           numPartitions: this.number(
             'KAFKA_TOPIC_PARTITIONS',
-            DEFAULT_PARTITIONS,
+            KAFKA_DEFAULT_PARTITIONS,
           ),
           replicationFactor: this.number(
             'KAFKA_TOPIC_REPLICATION_FACTOR',
-            DEFAULT_REPLICATION_FACTOR,
+            KAFKA_DEFAULT_REPLICATION_FACTOR,
           ),
         })),
         // Producing to a partition with no leader yet fails, so wait for the
@@ -105,7 +136,16 @@ export class KafkaService {
 
       this.logger.log(`Created topics: ${missing.join(', ')}.`);
     } finally {
-      await admin.disconnect().catch(() => undefined);
+      // Not rethrown: this runs in a `finally`, so throwing here would replace
+      // the real failure of `createTopics` with the failure of a cleanup step
+      // and hide why the topics could not be created. Logged rather than
+      // swallowed, because an admin client that will not close is a leaked
+      // connection somebody has to know about.
+      await admin
+        .disconnect()
+        .catch((error: Error) =>
+          this.logger.warn(`Closing the Kafka admin failed: ${error.message}`),
+        );
     }
   }
 
@@ -115,7 +155,8 @@ export class KafkaService {
   }
 
   private get brokers(): string[] {
-    const raw = this.config.get<string>('KAFKA_BROKERS') || DEFAULT_BROKERS;
+    const raw =
+      this.config.get<string>('KAFKA_BROKERS') || KAFKA_DEFAULT_BROKERS;
     return raw
       .split(',')
       .map((broker) => broker.trim())
@@ -136,9 +177,9 @@ export class KafkaService {
       this.config.get<string>('KAFKA_SASL_MECHANISM') ?? 'plain'
     ).toLowerCase();
 
-    if (!SASL_MECHANISMS.includes(mechanism as SaslMechanism)) {
+    if (!KAFKA_SASL_MECHANISMS.includes(mechanism as KafkaSaslMechanism)) {
       throw new Error(
-        `KAFKA_SASL_MECHANISM="${mechanism}" is not valid — expected one of: ${SASL_MECHANISMS.join(', ')}.`,
+        `KAFKA_SASL_MECHANISM="${mechanism}" is not valid — expected one of: ${KAFKA_SASL_MECHANISMS.join(', ')}.`,
       );
     }
 

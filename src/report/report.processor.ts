@@ -48,7 +48,7 @@ export class ReportProcessor extends WorkerHost {
       });
       await job.updateProgress(PROGRESS.BUILT);
 
-      const objectKey = await this.store(job, buffer);
+      const objectKey = await this.store(buffer);
       await job.updateProgress(PROGRESS.UPLOADED);
 
       this.logger.log(
@@ -127,25 +127,33 @@ export class ReportProcessor extends WorkerHost {
   }
 
   /**
-   * Uploads the built workbook and records it in `uploaded_objects`.
+   * Records the object, then uploads the built workbook.
    *
    * The key is random rather than derived from `job.id`: a sequential id would
    * let anyone guess the key of a report somebody else exported. The
    * `uploaded_objects` row is what lets `ImageCleanupService` purge the file
    * after its grace period.
    *
-   * @param job - Job the file belongs to.
+   * The row goes in FIRST, which reads backwards but is the only safe order.
+   * `ImageCleanupService` finds files to delete by reading `uploaded_objects`,
+   * so an object with no row is invisible to it — forever. Uploading first means
+   * a failure in between (a database blip) leaves exactly that: the job retries,
+   * uploads again under a fresh random key, and the first file is orphaned in
+   * the bucket for good. This way round the failure leaves a row pointing at a
+   * key that was never written, and the cleanup removes both — deleting a
+   * missing S3 key is a no-op.
+   *
    * @param buffer - The xlsx bytes to store.
    * @returns The object key the file was stored under.
    */
-  private async store(
-    job: Job<OrderReportPayload>,
-    buffer: Buffer,
-  ): Promise<string> {
+  private async store(buffer: Buffer): Promise<string> {
     const objectKey = `reports/orders-${randomUUID()}.xlsx`;
-    const url = await this.storage.put(objectKey, buffer, XLSX_MIME);
 
-    await this.prisma.uploadedObject.create({ data: { objectKey, url } });
+    await this.prisma.uploadedObject.create({
+      data: { objectKey, url: this.storage.publicUrl(objectKey) },
+    });
+
+    await this.storage.put(objectKey, buffer, XLSX_MIME);
 
     return objectKey;
   }

@@ -154,7 +154,17 @@ export class StorageService implements OnModuleDestroy {
     return `https://${this.bucket}.s3.${region}.amazonaws.com`;
   }
 
-  private publicUrl(key: string): string {
+  /**
+   * The URL a key will be served from, without writing anything.
+   *
+   * Public so a caller can record the object before uploading it: an upload
+   * that succeeds while its `uploaded_objects` row does not leaves a file the
+   * cleanup can never find, because the cleanup only ever reads that table.
+   *
+   * @param key - Object key.
+   * @returns The URL {@link StorageService.put} would return for that key.
+   */
+  publicUrl(key: string): string {
     return `${this.baseUrl()}/${key}`;
   }
 

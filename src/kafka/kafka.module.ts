@@ -1,13 +1,12 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { runsBackgroundJobs } from '../common/app-role';
+import { OutboxRelay } from '../outbox/outbox.relay';
 import { KafkaConsumer } from './kafka.consumer';
+import { kafkaEnabled } from './kafka.constant';
 import { KafkaProducer } from './kafka.producer';
-import { KafkaEventPublisher } from './kafka.publisher';
 import { KafkaService } from './kafka.service';
 
-export function kafkaEnabled(): boolean {
-  return process.env.KAFKA_ENABLED === 'true';
-}
+export { kafkaEnabled };
 
 /**
  * Wires the Kafka integration.
@@ -23,20 +22,19 @@ export class KafkaModule {
       return { module: KafkaModule };
     }
 
-    // Same split as MailModule: every process PRODUCES, because the events are
-    // emitted while a request is served, but only the background process
-    // CONSUMES — an API replica reading the topics would run each handler once
-    // per replica.
-    const consumes = runsBackgroundJobs();
+    // The API process talks to no broker at all any more. It used to hold a
+    // producer because events were published from the request that raised them;
+    // now a request only writes an outbox row, and the relay in the background
+    // process is what puts it on a topic. Running the relay in an API replica
+    // as well would publish the same rows a second time and out of order, and
+    // consuming there would run every handler once per replica.
+    if (!runsBackgroundJobs()) {
+      return { module: KafkaModule };
+    }
 
     return {
       module: KafkaModule,
-      providers: [
-        KafkaService,
-        KafkaProducer,
-        KafkaEventPublisher,
-        ...(consumes ? [KafkaConsumer] : []),
-      ],
+      providers: [KafkaService, KafkaProducer, OutboxRelay, KafkaConsumer],
       exports: [KafkaProducer],
     };
   }

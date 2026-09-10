@@ -10,7 +10,7 @@ import { XlsxThreadRunner } from './xlsx-thread.runner';
 type Deps = {
   source: { collect: jest.Mock };
   xlsx: { run: jest.Mock };
-  storage: { put: jest.Mock };
+  storage: { put: jest.Mock; publicUrl: jest.Mock };
   prisma: { uploadedObject: { create: jest.Mock } };
 };
 
@@ -34,7 +34,10 @@ function build(): { processor: ReportProcessor; deps: Deps } {
   const deps: Deps = {
     source: { collect: jest.fn() },
     xlsx: { run: jest.fn() },
-    storage: { put: jest.fn() },
+    storage: {
+      put: jest.fn(),
+      publicUrl: jest.fn((key: string) => `https://cdn/${key}`),
+    },
     prisma: { uploadedObject: { create: jest.fn() } },
   };
 
@@ -98,8 +101,37 @@ describe('ReportProcessor', () => {
       expect(result.objectKey).toMatch(/^reports\/orders-[0-9a-f-]+\.xlsx$/);
       // The row must exist for ImageCleanupService to purge the file later.
       expect(deps.prisma.uploadedObject.create).toHaveBeenCalledWith({
-        data: { objectKey: result.objectKey, url: 'https://cdn/x.xlsx' },
+        data: {
+          objectKey: result.objectKey,
+          url: `https://cdn/${result.objectKey}`,
+        },
       });
+    });
+
+    it('records the object before uploading it, never the other way round', async () => {
+      // ImageCleanupService finds files to delete by reading `uploaded_objects`,
+      // so a file uploaded without its row is invisible to the cleanup forever.
+      // Uploading first would leak one file into the bucket on every retry of a
+      // job that fails between the two.
+      const order: string[] = [];
+      const { processor, deps } = build();
+      deps.source.collect.mockResolvedValue({
+        rows: [row()],
+        truncated: false,
+      });
+      deps.xlsx.run.mockResolvedValue({ buffer: Buffer.alloc(8), buildMs: 1 });
+      deps.prisma.uploadedObject.create.mockImplementation(() => {
+        order.push('row');
+        return Promise.resolve({});
+      });
+      deps.storage.put.mockImplementation(() => {
+        order.push('upload');
+        return Promise.resolve('https://cdn/x.xlsx');
+      });
+
+      await processor.process(job());
+
+      expect(order).toEqual(['row', 'upload']);
     });
 
     it.each([

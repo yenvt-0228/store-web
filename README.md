@@ -303,6 +303,14 @@ docker exec store-web-kafka /opt/kafka/bin/kafka-console-consumer.sh \
   --bootstrap-server localhost:9092 --topic store.order.events --from-beginning
 ```
 
+Message mà consumer không xử lý nổi nằm ở `store.dlq` (đổi `--topic` ở lệnh trên). Còn
+event **chưa** lên được topic thì nằm trong bảng `outbox_events`:
+
+```sql
+SELECT status, count(*) FROM outbox_events GROUP BY status;
+SELECT id, event_name, attempts, last_error FROM outbox_events WHERE status = 'FAILED';
+```
+
 ### Email khi dev
 
 Để trống `SMTP_HOST` → **không gửi thật**, nội dung mail (kèm link kích hoạt /
@@ -461,10 +469,35 @@ Kafka **không thay** BullMQ. Hai thứ giải hai bài toán khác nhau, nên c
 Tức là: cần **thử lại và biết job nào hỏng** thì dùng BullMQ; cần **phát tán một
 chuyện đã xảy ra** cho bên khác thì dùng Kafka.
 
-**Service không biết Kafka tồn tại.** `OrderService` vẫn `events.emit(OrderEvent.CREATED, ...)`
-như cũ; [KafkaEventPublisher](src/kafka/kafka.publisher.ts) nghe event nội bộ đó rồi
-đẩy lên topic. Nhờ vậy tắt `KAFKA_ENABLED` là gỡ sạch tích hợp mà không đụng một dòng
-nào trong service.
+**Transactional outbox: đơn và event cùng commit hoặc cùng không.** Trước đây service
+`emit` event nội bộ rồi một listener publish thẳng lên Kafka. Đó là *dual-write*: đơn đã
+nằm trong DB mà broker chết thì event bốc hơi, chỉ còn một dòng log. Bây giờ
+`OrderService` ghi một dòng vào bảng `outbox_events` **bên trong chính transaction tạo
+đơn** ([OutboxService.record()](src/outbox/outbox.service.ts)); transaction rollback thì
+event cũng biến mất theo. [OutboxRelay](src/outbox/outbox.relay.ts) chạy 5s một lần trong
+process worker, đọc các dòng `PENDING` theo thứ tự cũ nhất trước, publish, rồi đánh dấu
+`SENT`. Broker chết chỉ làm event **chậm**, không làm mất.
+
+`id` của dòng outbox chính là `eventId` trong envelope. Nhờ vậy một dòng được publish hai
+lần (send thành công nhưng process chết trước khi kịp đánh dấu) vẫn mang đúng một id, và
+consumer nhận ra đó là bản trùng.
+
+Publish lỗi liên tục `OUTBOX_MAX_ATTEMPTS` lần thì dòng đó chuyển `FAILED` và được giữ lại
+để xử lý tay — nếu retry mãi thì nó chặn mọi event xếp hàng phía sau. Dòng `SENT` được dọn
+sau 7 ngày; dòng `FAILED` thì không bao giờ tự xoá.
+
+> **Đánh đổi cần biết:** một dòng `FAILED` phá vỡ đúng thứ tự mà key Kafka đảm bảo — các
+> event sau của **cùng đơn đó** vẫn được publish, nên consumer có thể thấy
+> `order.confirmed` của một đơn nó chưa từng thấy `order.created`. Đây là giá của việc
+> không để một dòng hỏng chặn mọi đơn khác, và là lý do log ở đó là `error` chứ không phải
+> `warn`. Chạy `SELECT ... WHERE status = 'FAILED'` nên là một cảnh báo có người theo dõi.
+
+> **Bật `KAFKA_ENABLED=true` thì phải có process `APP_ROLE=worker` (hoặc `all`) chạy kèm.**
+> Chỉ có replica API thôi thì dòng outbox được ghi mà không ai gửi đi cả.
+
+Bus nội bộ (`events.emit`) vẫn giữ nguyên cho mail: mail listener chạy cùng process nên
+không có bài toán dual-write. Tắt `KAFKA_ENABLED` thì `OutboxService` không ghi dòng nào
+và `KafkaModule.register()` trả về module rỗng.
 
 **Chỉ mirror event đơn hàng, cố ý bỏ event mail.** Mail event mang theo token kích hoạt
 và token reset mật khẩu — một topic mà service khác đọc được không phải chỗ để credential
@@ -475,24 +508,48 @@ nằm.
 consumer không bao giờ thấy `order.confirmed` trước `order.created`. Tên event nằm trong
 envelope cùng `eventId` (để dedupe — Kafka giao *ít nhất một lần*) và `occurredAt`.
 
-**Publish hỏng không làm hỏng request.** Kafka ở đây là kênh phụ, không phải nguồn sự
-thật: `KafkaProducer.publish()` có timeout 3s, lỗi thì ghi log rồi thôi — giống cách
-`MailDispatcher` xử lý khi queue chết.
+**`publish()` ném lỗi, và đó là cố ý.** Không còn ai publish từ trong request nữa, nên
+lý do cũ để nuốt lỗi cũng hết: người gọi duy nhất là relay, mà một relay không phân biệt
+được "đã gửi" với "mất" sẽ đánh dấu `SENT` cho một event không bao giờ tới. Timeout 3s
+(`KAFKA_PUBLISH_TIMEOUT_MS`) để một broker im lặng không giữ relay lại mãi.
 
 **Ai produce, ai consume** — cùng nguyên tắc với `MailModule`:
 
 | `APP_ROLE` | Produce | Consume |
 | --- | --- | --- |
 | `all` | có | có |
-| `api` | có | **không** |
+| `api` | **không** | **không** |
 | `worker` | có | có |
 
-Process API mà cũng consume thì scale lên 3 replica là mỗi message được xử lý 3 lần.
+Process API chỉ *ghi outbox*, không nói chuyện với broker. Nó mà chạy relay thì scale lên
+3 replica là cùng một dòng được publish 3 lần và sai cả thứ tự; nó mà consume thì mỗi
+message được xử lý 3 lần.
 
 **Consumer thử lại mãi khi broker chưa lên.** Bỏ cuộc ngay lúc boot là tệ nhất: worker
-vẫn "chạy bình thường" trong khi không xử lý gì cả. Ngược lại, một message hỏng
-(JSON sai, handler ném lỗi) thì ghi log rồi **đi tiếp** — ném lỗi ra sẽ khiến kafkajs
-đọc lại message đó vô hạn và chặn cả partition phía sau.
+vẫn "chạy bình thường" trong khi không xử lý gì cả.
+
+**Chống trùng bằng `eventId`.** Kafka giao *ít nhất một lần*: rebalance, offset chưa kịp
+commit, hay một dòng outbox publish hai lần đều đưa cùng một event lên dây lần nữa.
+Consumer đánh dấu `eventId` đã xử lý vào Redis (key `kafka:handled:<group>:<eventId>`,
+TTL 7 ngày) **sau khi** handler chạy xong — đánh dấu trước rồi crash giữa chừng sẽ biến
+lần giao lại thành một message bị bỏ qua. Redis chết thì *fail open*: xử lý lại còn hơn
+âm thầm bỏ event.
+
+**Message hỏng đi vào DLQ, không ném ngược ra kafkajs.** Ném lỗi ra không phải "báo lỗi",
+nó là tín hiệu từ chối offset: kafkajs đọc lại đúng message đó vô hạn và chặn cả partition
+phía sau. Nên một message không xử lý được sẽ được thử lại `KAFKA_HANDLER_ATTEMPTS` lần,
+rồi ghi sang topic `store.dlq` kèm topic/partition/offset gốc, lỗi cuối cùng và **nguyên
+văn** body để replay được — sau đó partition đi tiếp. Consumer **không** subscribe
+`store.dlq`, nếu không thì các message hỏng lại quay về đúng handler đã bó tay với chúng.
+
+Trường hợp duy nhất vẫn ném lỗi: ghi DLQ cũng hỏng. Lúc đó message không được xử lý mà
+cũng không được cất đi đâu cả, commit offset là mất luôn — và một broker không nhận nổi
+bản ghi DLQ thì cũng chẳng nhận được gì khác, nên chặn lại mới là đúng.
+
+**Handler `@OnEvent('kafka.*')` bắt buộc phải idempotent.** Retry là `emitAsync` lại, tức
+là **mọi** listener của event đó chạy lại, kể cả listener đã thành công ở lần trước — fan-out
+emit thì không tránh được. Dù sao thì cũng phải idempotent: Kafka giao ít nhất một lần, và
+`eventId` chỉ dedupe được cả message chứ không dedupe được từng listener.
 
 **Topic được tạo lúc khởi động.** Subscribe vào topic chưa từng có message sẽ lỗi
 `this server does not host this topic-partition`, nên `ensureTopics()` tạo trước (mặc
@@ -500,8 +557,8 @@ vẫn "chạy bình thường" trong khi không xử lý gì cả. Ngược lạ
 phần còn thiếu — gọi thẳng `createTopics` trên topic đã có sẽ ghi log lỗi mỗi lần boot.
 
 **Thêm một loại event mới** cần ba bước: thêm tên vào `KafkaEventName`
-([kafka.constant.ts](src/kafka/kafka.constant.ts)), thêm một `@OnEvent` trong
-[kafka.publisher.ts](src/kafka/kafka.publisher.ts), và bên nhận thì nghe
+([kafka.constant.ts](src/kafka/kafka.constant.ts)), gọi `outbox.record(tx, ...)` trong
+transaction sinh ra nó, và bên nhận thì nghe
 `@OnEvent('kafka.<tên event>')` — tiền tố `kafka.` là bắt buộc, không có nó thì handler
 chạy cả với event nội bộ lẫn message Kafka do chính nó sinh ra, mọi side effect chạy đôi.
 
@@ -647,11 +704,12 @@ src/
 ├── common/         # dùng chung: guard RBAC, DTO phân trang, validator, event
 ├── generated/      # Prisma Client (sinh tự động — không sửa tay)
 ├── i18n/           # thông báo song ngữ en/vi
-├── kafka/          # bus sự kiện domain: producer, consumer, bridge event nội bộ
+├── kafka/          # bus sự kiện domain: client, producer, consumer, DLQ
 ├── mail/           # nodemailer + BullMQ + listener theo event
 ├── cart/           # giỏ hàng — CHỈ nằm trong Redis, không có bảng
 ├── category/       # danh mục sản phẩm (admin CRUD)
 ├── order/          # đặt hàng, huỷ, máy trạng thái, admin duyệt đơn
+├── outbox/         # transactional outbox: ghi event trong transaction + relay lên Kafka
 ├── payment/        # COD + cổng thanh toán giả lập
 ├── product/        # sản phẩm: endpoint khách + admin CRUD (xoá mềm)
 ├── prisma/         # PrismaService và seed

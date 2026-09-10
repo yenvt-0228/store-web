@@ -6,10 +6,31 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { Partitioners, type Producer } from 'kafkajs';
-import { KafkaEnvelope, KafkaEventName, KafkaTopic } from './kafka.constant';
+import {
+  KAFKA_PUBLISH_TIMEOUT_MS,
+  KafkaEnvelope,
+  KafkaEventName,
+} from './kafka.constant';
 import { KafkaService } from './kafka.service';
 
-const PUBLISH_TIMEOUT_MS = 3000;
+/** One message to publish, before it is wrapped in a {@link KafkaEnvelope}. */
+export interface OutboundMessage<T> {
+  topic: string;
+  /** Partition key; messages sharing a key keep their order. */
+  key: string;
+  eventName: KafkaEventName;
+  payload: T;
+  /**
+   * Identity of the event, used by consumers to deduplicate.
+   *
+   * The outbox passes the id of its own row, so a row published twice — the
+   * first attempt reached the broker but the process died before the row was
+   * marked sent — carries the same id both times and the consumer drops the
+   * second copy. Left out, a fresh id is generated.
+   */
+  eventId?: string;
+  occurredAt?: string;
+}
 
 @Injectable()
 export class KafkaProducer implements OnModuleInit, OnApplicationShutdown {
@@ -19,7 +40,7 @@ export class KafkaProducer implements OnModuleInit, OnApplicationShutdown {
   private connected = false;
 
   constructor(private readonly kafka: KafkaService) {
-    this.producer = kafka.client.producer({
+    this.producer = kafka.createProducer({
       // Set explicitly: kafkajs warns on every start when it has to fall back
       // to its own default, and the key hashing decides the partition.
       createPartitioner: Partitioners.DefaultPartitioner,
@@ -50,48 +71,55 @@ export class KafkaProducer implements OnModuleInit, OnApplicationShutdown {
   }
 
   /**
-   * Publishes a domain event.
+   * Publishes one domain event and reports whether it arrived.
    *
-   * Kafka is a side channel here, not the source of truth: a broker outage must
-   * not fail the request that produced the event, so a failure is logged and
-   * swallowed instead of thrown.
+   * This used to swallow every failure so a broker outage could not fail the
+   * request that produced the event. It no longer has to: nothing publishes
+   * from a request anymore. Events are written to the outbox table inside the
+   * same transaction as the data that produced them, and the outbox relay is
+   * the only caller here — a relay that cannot tell a delivered message from a
+   * lost one would mark the row as sent and lose the event for good.
    *
-   * @param topic - Topic to write to.
-   * @param key - Partition key; messages sharing a key keep their order.
-   * @param eventName - Name stored in the envelope, used for routing.
-   * @param payload - Event body, serialized as JSON.
-   * @returns Resolves whether or not the message reached the broker.
+   * @param message - Topic, key, event name and payload to send.
+   * @returns Resolves once the broker acknowledged the message.
+   * @throws {Error} When the broker refuses the message or stays silent.
    */
-  async publish<T>(
-    topic: KafkaTopic,
-    key: string,
-    eventName: KafkaEventName,
-    payload: T,
-  ): Promise<void> {
+  async publish<T>(message: OutboundMessage<T>): Promise<void> {
     const envelope: KafkaEnvelope<T> = {
-      eventId: randomUUID(),
-      eventName,
-      occurredAt: new Date().toISOString(),
-      payload,
+      eventId: message.eventId ?? randomUUID(),
+      eventName: message.eventName,
+      occurredAt: message.occurredAt ?? new Date().toISOString(),
+      payload: message.payload,
     };
 
-    try {
-      await this.connect();
-      // A managed cluster usually has auto-creation disabled, so the first
-      // publish would fail on a topic nobody created yet.
-      await this.kafka.ensureTopics();
-      await this.withTimeout(
-        this.producer.send({
-          topic,
-          messages: [{ key, value: JSON.stringify(envelope) }],
-        }),
-        PUBLISH_TIMEOUT_MS,
-      );
-    } catch (error) {
-      this.logger.error(
-        `Publishing ${eventName} (key ${key}) to ${topic} failed: ${(error as Error).message}`,
-      );
-    }
+    await this.send(message.topic, message.key, JSON.stringify(envelope));
+  }
+
+  /**
+   * Sends an already serialized value, for messages that are not domain events.
+   *
+   * The dead-letter record is the only one: it wraps a message this application
+   * failed to handle, so it carries the original envelope rather than being one.
+   *
+   * @param topic - Topic to write to.
+   * @param key - Partition key.
+   * @param value - Message body, already a string.
+   * @returns Resolves once the broker acknowledged the message.
+   * @throws {Error} When the broker refuses the message or stays silent.
+   */
+  async sendRaw(topic: string, key: string, value: string): Promise<void> {
+    await this.send(topic, key, value);
+  }
+
+  private async send(topic: string, key: string, value: string): Promise<void> {
+    await this.connect();
+    // A managed cluster usually has auto-creation disabled, so the first
+    // publish would fail on a topic nobody created yet.
+    await this.kafka.ensureTopics();
+    await this.withTimeout(
+      this.producer.send({ topic, messages: [{ key, value }] }),
+      KAFKA_PUBLISH_TIMEOUT_MS,
+    );
   }
 
   async onApplicationShutdown(): Promise<void> {

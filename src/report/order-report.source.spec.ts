@@ -95,6 +95,22 @@ describe('OrderReportSource.collect', () => {
     expect(findMany).not.toHaveBeenCalled();
   });
 
+  it('rejects a day that does not exist rather than letting Date roll it over', async () => {
+    // `new Date('2026-02-31')` is NOT Invalid Date — it silently becomes 3 March,
+    // so a NaN check alone would widen the report by three days without a word.
+    const { source, findMany } = sourceReturning(1);
+
+    await expect(
+      source.collect({ requestedBy: 'admin', to: '2026-02-31' }),
+    ).rejects.toThrow('not a valid date');
+
+    await expect(
+      source.collect({ requestedBy: 'admin', from: '2027-02-29' }),
+    ).rejects.toThrow('not a valid date');
+
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
   it('keeps "from" as gte', async () => {
     const { source, findMany } = sourceReturning(1);
 

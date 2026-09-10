@@ -20,7 +20,7 @@ model User {
   id       String  @id @default(uuid(7)) @db.Uuid
   name     String  @db.VarChar(255)
   email    String  @unique @db.VarChar(255)
-  password String?  @db.VarChar(255)
+  password String? @db.VarChar(255)
   googleId String? @unique @map("google_id") @db.VarChar(255)
   phone    String? @db.VarChar(20)
   address  String? @db.VarChar(255)
@@ -314,4 +314,40 @@ model Payment {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("payments")
+}
+
+enum OutboxStatus {
+  PENDING
+  SENT
+  FAILED
+
+  @@map("outbox_status")
+}
+
+/// Domain events waiting to be published to Kafka.
+///
+/// A row is written inside the same transaction as the data that produced it,
+/// so the event cannot exist without the order and the order cannot exist
+/// without the event. Publishing happens afterwards, from `OutboxRelay`: a
+/// broker that is down delays the event, it never loses it.
+model OutboxEvent {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  topic     String @db.VarChar(255)
+  /// Partition key — the aggregate id, so every event of one order is ordered.
+  eventKey  String @map("event_key") @db.VarChar(255)
+  eventName String @map("event_name") @db.VarChar(100)
+  payload   Json
+
+  status    OutboxStatus @default(PENDING)
+  attempts  Int          @default(0)
+  lastError String?      @map("last_error")
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  publishedAt DateTime? @map("published_at")
+
+  /// The relay reads pending rows oldest first; the same index serves the
+  /// cleanup of rows that were already sent.
+  @@index([status, createdAt])
+  @@map("outbox_events")
 }

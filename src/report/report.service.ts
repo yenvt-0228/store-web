@@ -14,6 +14,16 @@ import { OrderReportDto } from './dto/order-report.dto';
 import { REPORT_QUEUE, ReportJob, XLSX_MIME } from './report.constant';
 import { OrderReportResult, ReportJobStatus } from './report.interface';
 
+/**
+ * Reduces a value to what is safe inside a quoted `filename=` parameter.
+ *
+ * @param value - Value to embed in the header.
+ * @returns The value with everything but letters, digits, `-` and `_` removed.
+ */
+function safeFilenamePart(value: string): string {
+  return value.replace(/[^A-Za-z0-9_-]/g, '') || 'report';
+}
+
 @Injectable()
 export class ReportService {
   constructor(
@@ -94,7 +104,11 @@ export class ReportService {
 
     return new StreamableFile(buffer, {
       type: XLSX_MIME,
-      disposition: `attachment; filename="orders-${jobId}.xlsx"`,
+      // `jobId` comes from the URL. A job with a quote or a newline in its id
+      // cannot exist today, so this is not reachable — but interpolating a path
+      // parameter into a response header is one BullMQ change away from being a
+      // header injection, and stripping it costs nothing.
+      disposition: `attachment; filename="orders-${safeFilenamePart(jobId)}.xlsx"`,
     });
   }
 
