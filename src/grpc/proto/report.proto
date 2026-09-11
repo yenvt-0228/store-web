@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package store.v1;
+
+// Progress of a queued xlsx export.
+//
+// `stream` is the whole point: the HTTP API makes the client poll
+// GET /admin/reports/orders/:jobId until the state flips to completed, which is
+// a request per tick, most of them answering "still working". Here the server
+// pushes each change over one open call and closes the stream when the job is
+// done. This is the shape REST cannot express.
+service ReportService {
+  rpc WatchReport(WatchReportRequest) returns (stream ReportProgress);
+}
+
+message WatchReportRequest {
+  string job_id = 1;
+}
+
+message ReportProgress {
+  string job_id = 1;
+  // BullMQ job state: waiting | active | completed | failed | delayed.
+  string state = 2;
+  int32 progress = 3;
+
+  // Set once the job completed. Empty on every earlier message, because proto3
+  // has no null and an absent string is "".
+  string object_key = 4;
+  int32 rows = 5;
+  bool truncated = 6;
+
+  // Set only when the job failed for good.
+  string failed_reason = 7;
+}

@@ -8,7 +8,15 @@ import { I18nValidationPipe } from 'nestjs-i18n';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import { ValidationExceptionFilter } from './common/filters/validation-exception.filter';
+import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { AppRole, resolveAppRole } from './common/app-role';
+import {
+  GRPC_DEFAULT_URL,
+  GRPC_LOADER_OPTIONS,
+  GRPC_PACKAGE,
+  GRPC_PROTO_PATHS,
+  grpcEnabled,
+} from './grpc/grpc.constant';
 
 /**
  * Boots the HTTP process: global pipes and filters, Swagger docs, then listen.
@@ -65,6 +73,34 @@ async function bootstrap() {
   SwaggerModule.setup('docs', app, document); // documentation served at /docs
 
   const configService = app.get(ConfigService);
+
+  // A hybrid application: one process, two transports. HTTP keeps serving the
+  // browser — gRPC cannot reach one — while the gRPC port answers other
+  // services. They share the container, so a handler on either side talks to
+  // the same providers, the same Prisma pool and the same Redis connection.
+  if (grpcEnabled()) {
+    const url = configService.get<string>('GRPC_URL') ?? GRPC_DEFAULT_URL;
+
+    app.connectMicroservice<MicroserviceOptions>(
+      {
+        transport: Transport.GRPC,
+        options: {
+          package: GRPC_PACKAGE,
+          protoPath: GRPC_PROTO_PATHS,
+          url,
+          loader: GRPC_LOADER_OPTIONS,
+        },
+      },
+      // The gRPC handlers reuse the domain services, which throw
+      // HttpException — inheritAppConfig would also apply the global HTTP
+      // filters to them, and those write an HTTP body into a gRPC reply.
+      // GrpcExceptionFilter is bound per controller instead.
+      { inheritAppConfig: false },
+    );
+
+    await app.startAllMicroservices();
+    console.log(`gRPC listening on ${url} (internal only — never publish it)`);
+  }
 
   const port = configService.get<number>('PORT') ?? 3000;
 

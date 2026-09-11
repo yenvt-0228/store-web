@@ -1,7 +1,7 @@
 {
   "name": "store-web-api",
   "version": "0.0.1",
-  "description": "API web bán hàng — NestJS + Prisma + Redis",
+  "description": "API web b\u00e1n h\u00e0ng \u2014 NestJS + Prisma + Redis",
   "author": "",
   "private": true,
   "license": "UNLICENSED",
@@ -24,16 +24,21 @@
     "db:seed": "nest build && node dist/prisma/seed.js",
     "db:migrate": "prisma migrate dev",
     "lint:ci": "eslint \"{src,test}/**/*.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "proto:gen": "proto-loader-gen-types --longs=String --enums=String --defaults --oneofs --grpcLib=@grpc/grpc-js --outDir=src/generated/grpc src/grpc/proto/*.proto",
+    "grpc:try": "ts-node -r tsconfig-paths/register scripts/grpc-client.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1115.0",
+    "@grpc/grpc-js": "^1.14.4",
+    "@grpc/proto-loader": "^0.8.1",
     "@nestjs/bullmq": "^11.0.5",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.0.1",
     "@nestjs/event-emitter": "^3.1.0",
     "@nestjs/jwt": "^11.0.2",
+    "@nestjs/microservices": "^11.1.28",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/schedule": "^6.1.3",

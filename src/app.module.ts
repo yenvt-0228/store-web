@@ -14,6 +14,7 @@ import { AppService } from './app.service';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { CategoryModule } from './category/category.module';
+import { GrpcModule } from './grpc/grpc.module';
 import { KafkaModule } from './kafka/kafka.module';
 import { MailModule } from './mail/mail.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -51,6 +52,7 @@ import { PaymentModule } from './payment/payment.module';
     RedisModule,
     QueueModule.register(),
     KafkaModule.register(),
+    GrpcModule.register(),
     MailModule.register(),
     AuthModule,
     UserModule,

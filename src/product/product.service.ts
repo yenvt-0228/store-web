@@ -95,6 +95,51 @@ export class ProductService {
     return toProductResponse(product, await this.imagesOf(id));
   }
 
+  /**
+   * Answers whether each requested quantity is currently in stock.
+   *
+   * A question, not a reservation: nothing is held and the answer is stale the
+   * moment it is given. Taking stock stays inside the order transaction, where
+   * a conditional `updateMany` makes it atomic — an RPC that decremented here
+   * would need a saga to put it back when the order later fails.
+   *
+   * @param items - Product ids and the quantity wanted of each.
+   * @returns One line per requested item, plus whether all of them fit.
+   */
+  async checkStock(items: { productId: string; quantity: number }[]) {
+    const products = await this.prisma.product.findMany({
+      where: {
+        id: { in: items.map((item) => item.productId) },
+        status: ProductStatus.ACTIVE,
+        deletedAt: null,
+      },
+      select: { id: true, quantity: true },
+    });
+
+    const available = new Map(products.map((p) => [p.id, p.quantity]));
+
+    const lines = items.map((item) => {
+      const stock = available.get(item.productId);
+
+      return {
+        productId: item.productId,
+        requested: item.quantity,
+        available: stock ?? 0,
+        // Distinct from `available === 0`: a caller has to be able to tell a
+        // product that sold out from a product id that does not exist.
+        found: stock !== undefined,
+        sufficient: stock !== undefined && stock >= item.quantity,
+      };
+    });
+
+    return {
+      lines,
+      // `every` on an empty array is true, which would answer "yes, all
+      // available" to a request that asked about nothing.
+      allAvailable: lines.length > 0 && lines.every((line) => line.sufficient),
+    };
+  }
+
   async create(dto: CreateProductDto) {
     await this.assertCategoryExists(dto.categoryId);
 

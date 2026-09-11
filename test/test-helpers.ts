@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { JwtService } from '@nestjs/jwt';
+import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
@@ -8,6 +9,11 @@ import { I18nValidationPipe } from 'nestjs-i18n';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
+import {
+  GRPC_LOADER_OPTIONS,
+  GRPC_PACKAGE,
+  GRPC_PROTO_PATHS,
+} from '../src/grpc/grpc.constant';
 import { GoogleAuthService } from '../src/auth/google-auth.service';
 import type { Locale } from '../src/common/constants/locale.constant';
 import { DEFAULT_LOCALE } from '../src/common/constants/locale.constant';
@@ -75,6 +81,9 @@ export function http(app: INestApplication) {
 export interface TestAppOverrides {
   // Thay GoogleAuthService để test không gọi ra Google thật.
   google?: Pick<GoogleAuthService, 'verifyIdToken'>;
+  // Mở thêm cổng gRPC, đúng cách main.ts làm. Chỉ spec nào cần mới truyền,
+  // các spec khác không mở cổng nên không đụng nhau.
+  grpcUrl?: string;
 }
 
 export async function createTestApp(
@@ -100,7 +109,29 @@ export async function createTestApp(
     new ValidationExceptionFilter({ detailedErrors: false }),
     new PrismaExceptionFilter(),
   );
+
+  // Gắn transport TRƯỚC init, giống main.ts: sau init thì đã muộn.
+  if (overrides.grpcUrl) {
+    app.connectMicroservice<MicroserviceOptions>(
+      {
+        transport: Transport.GRPC,
+        options: {
+          package: GRPC_PACKAGE,
+          protoPath: [...GRPC_PROTO_PATHS],
+          url: overrides.grpcUrl,
+          loader: GRPC_LOADER_OPTIONS,
+        },
+      },
+      { inheritAppConfig: false },
+    );
+  }
+
   await app.init();
+
+  if (overrides.grpcUrl) {
+    await app.startAllMicroservices();
+  }
+
   return app;
 }
 

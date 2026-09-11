@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package store.v1;
+
+// Token introspection for internal callers.
+//
+// The alternative is handing every service the JWT secret so it can verify
+// locally. That is faster, but it also means a rotated secret has to be
+// redeployed everywhere at once, and a revoked or deactivated user stays valid
+// until the token expires. This asks the service that owns users.
+service AuthService {
+  rpc VerifyToken(VerifyTokenRequest) returns (TokenClaims);
+}
+
+message VerifyTokenRequest {
+  // The raw JWT, without the "Bearer " prefix.
+  string access_token = 1;
+}
+
+message TokenClaims {
+  string user_id = 1;
+  string email = 2;
+  repeated string roles = 3;
+}

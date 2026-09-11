@@ -24,6 +24,9 @@ import { TokenService } from './token.service';
   ],
   controllers: [AuthController],
   providers: [AuthService, GoogleAuthService, JwtStrategy, TokenService],
-  exports: [AuthService, TokenService],
+  // JwtStrategy is exported, not just registered: the gRPC VerifyToken endpoint
+  // calls its `validate` directly so the "user exists, is active, is verified"
+  // rules have exactly one implementation.
+  exports: [AuthService, TokenService, JwtStrategy, JwtModule],
 })
 export class AuthModule {}

@@ -311,6 +311,37 @@ SELECT status, count(*) FROM outbox_events GROUP BY status;
 SELECT id, event_name, attempts, last_error FROM outbox_events WHERE status = 'FAILED';
 ```
 
+### gRPC (API nội bộ giữa các service)
+
+```bash
+GRPC_ENABLED=true
+GRPC_URL=0.0.0.0:50051
+GRPC_INTERNAL_KEY=$(openssl rand -hex 32)
+```
+
+Bật lên thì process API mở thêm cổng 50051 **bên cạnh** cổng HTTP — cùng một
+process, hai transport. Tắt thì không nạp provider nào, không mở cổng nào.
+
+Gọi thử bằng [grpcurl](https://github.com/fullstorydev/grpcurl) (payload là nhị
+phân nên `curl` vô dụng):
+
+```bash
+grpcurl -plaintext \
+  -import-path src/grpc/proto -proto order.proto \
+  -H "x-internal-key: $GRPC_INTERNAL_KEY" \
+  -d '{"order_code": "DH-001"}' \
+  localhost:50051 store.v1.OrderService/GetOrder
+```
+
+Xem stream tiến độ báo cáo — mỗi lần trạng thái đổi là một dòng mới hiện ra:
+
+```bash
+grpcurl -plaintext -import-path src/grpc/proto -proto report.proto \
+  -H "x-internal-key: $GRPC_INTERNAL_KEY" \
+  -d '{"job_id": "1"}' \
+  localhost:50051 store.v1.ReportService/WatchReport
+```
+
 ### Email khi dev
 
 Để trống `SMTP_HOST` → **không gửi thật**, nội dung mail (kèm link kích hoạt /
@@ -562,6 +593,74 @@ transaction sinh ra nó, và bên nhận thì nghe
 `@OnEvent('kafka.<tên event>')` — tiền tố `kafka.` là bắt buộc, không có nó thì handler
 chạy cả với event nội bộ lẫn message Kafka do chính nó sinh ra, mọi side effect chạy đôi.
 
+### gRPC: hỏi-đáp đồng bộ, phần Kafka không làm được
+
+Kafka và gRPC không thay nhau, chúng bù cho nhau:
+
+| | REST | Kafka | gRPC |
+| --- | --- | --- | --- |
+| Ai gọi | trình duyệt → API | không ai gọi ai | service → service |
+| Câu hỏi | "cho tôi trang này" | "chuyện này vừa xảy ra" | "cho tôi hỏi cái này" |
+| Bên kia chết | lỗi ngay | event nằm chờ trong topic | lỗi ngay |
+| Hợp đồng | Swagger, viết tay | `KafkaEventName`, tự quy ước | `.proto`, compiler ép |
+
+Cụ thể trong dự án này: `order.created` trên Kafka chỉ mang `orderCode`, email và
+tổng tiền — đủ để một service quyết định nó có quan tâm hay không. Service nào
+**có** quan tâm thì phải hỏi tiếp địa chỉ giao và danh sách món, và câu hỏi đó
+đồng bộ. Đó là `GetOrder`.
+
+**gRPC là transport, không phải tầng mới.** Mọi handler trong [src/grpc/](src/grpc/)
+gọi thẳng vào đúng service mà HTTP controller đang dùng, và chỉ thêm hai thứ:
+map sang message của proto, và dịch exception sang gRPC status.
+
+**Chỉ đọc.** Không có `ReserveStock`. Trừ tồn kho nằm trong cùng transaction với
+`tx.order.create`, đưa ra sau một RPC là mất tính nguyên tử và phải làm saga với
+compensating release — lớn hơn nhiều so với một endpoint đọc.
+
+**App lai, chạy ở process API.** `app.connectMicroservice()` trong
+[main.ts](src/main.ts) gắn thêm transport gRPC vào app đang có; hai bên dùng
+chung container DI, chung pool Prisma, chung kết nối Redis. Worker không mở gRPC:
+nó rút queue và outbox, không trả lời ai cả.
+
+**Tiền là `string`, không phải `double`.** Protobuf không có kiểu decimal, mà
+1234.56 không biểu diễn chính xác được bằng double. Cột trong DB là
+`Decimal(12,2)` nên trên dây cũng giữ nguyên như vậy. Test đã ghim kiểu này lại.
+
+**Số thứ tự field mới là danh tính, không phải tên.** Đổi tên field thì client cũ
+vẫn chạy; đổi số thì client cũ đọc địa chỉ ra khỏi ô trạng thái. `grpc.contract.spec.ts`
+ghim số field của `Order` để thay đổi đó không lọt qua review.
+
+**Exception được dịch ở biên.** Service dùng chung với HTTP nên ném
+`NotFoundException`; [GrpcExceptionFilter](src/grpc/grpc-exception.filter.ts) đổi
+sang `NOT_FOUND`. Không có nó thì mọi lỗi đến tay caller đều là `UNKNOWN`, và
+caller không phân biệt được "đừng thử lại" với "chờ rồi thử lại".
+
+**Cổng gRPC phải nằm trong mạng nội bộ.** `GetOrder` trả về tên, số điện thoại và
+địa chỉ khách hàng, mà trước nó không có `JwtAuthGuard` — caller là service chứ
+không phải người, không có token người dùng để kiểm tra.
+[GrpcInternalGuard](src/grpc/grpc-internal.guard.ts) chặn bằng shared secret so
+sánh timing-safe, và **không có `GRPC_INTERNAL_KEY` thì process không khởi động**.
+Shared secret là mức sàn; nhiều service hơn thì cần mTLS.
+
+**`VerifyToken` cố ý không nằm sau guard đó** — bản thân token đã là credential.
+
+**Streaming là thứ REST không diễn đạt được.** `WatchReport` trả `Observable`:
+mỗi `next` là một message, `complete` đóng stream. Thay cho việc client poll
+`GET /admin/reports/orders/:jobId` mỗi 2 giây mà phần lớn câu trả lời là "vẫn
+đang chạy". Chỉ gửi khi **có thay đổi**, và phần dễ quên nhất là teardown: client
+ngắt kết nối mà không `clearInterval` thì còn lại một vòng lặp gõ Redis đến hết
+đời process.
+
+**Kiểu TypeScript viết tay** trong [grpc.interface.ts](src/grpc/grpc.interface.ts)
+chứ không sinh tự động, để clone mới `tsc` chạy được ngay không cần bước codegen.
+Cái giá là có thể lệch với `.proto`, và [grpc.contract.spec.ts](src/grpc/grpc.contract.spec.ts)
+là thứ chặn: nó load `.proto` thật rồi đối chiếu từng service/method với controller.
+Khi proto lớn lên thì chuyển sang `npm run proto:gen` (dùng `proto-loader-gen-types`,
+không cần cài `protoc`).
+
+**Trình duyệt không gọi gRPC trực tiếp được**, nên REST controller giữ nguyên. gRPC
+chỉ dành cho service ↔ service.
+
 ## Test
 
 ```bash
@@ -573,6 +672,51 @@ E2E dùng database riêng khai báo ở `.env.test` và tự chạy `prisma migr
 trước khi test. Mỗi test bắt đầu bằng `TRUNCATE` toàn bộ bảng nên độc lập nhau.
 `.env.test` mặc định trỏ S3 vào MinIO local; không chạy MinIO thì xoá `S3_BUCKET`
 trong file đó, `upload.e2e-spec.ts` và `image-cleanup.e2e-spec.ts` vẫn chạy ở chế độ dev.
+
+> **Chạy e2e phải qua `npm run test:e2e`, không gọi `npx jest --config test/jest-e2e.json`
+> trực tiếp.** Script đó set `NODE_OPTIONS=--experimental-vm-modules`; thiếu cờ này
+> Prisma Client không nạp được WASM query compiler và **mọi** suite fail với lỗi
+> `import()` trông chẳng liên quan gì tới test.
+
+### Test phần gRPC
+
+Bốn tầng, từ rẻ tới đắt — ba tầng đầu không cần hạ tầng gì:
+
+| Tầng | File | Cần gì | Bắt được lỗi gì |
+| --- | --- | --- | --- |
+| Unit | `*.grpc.controller.spec.ts`, `grpc-internal.guard.spec.ts`, `grpc-exception.filter.spec.ts` | không | map sai field, guard hớ, status dịch sai |
+| Hợp đồng | `grpc.contract.spec.ts` | không | `.proto` lệch code, đổi số field, tiền thành `double`, mất `stream` |
+| Transport | `grpc.transport.spec.ts` | không | socket, protobuf, metadata, đóng stream — service là stub |
+| E2E | `test/grpc.e2e-spec.ts` | DB + Redis | `GrpcModule` có thật sự nạp trong `AppModule` không, dữ liệu thật |
+
+Ba tầng đầu chạy bằng `npm test`. Tầng e2e cần `npm run test:e2e`.
+
+Vì sao cần cả tầng transport lẫn e2e: transport chứng minh **giao thức** đúng mà
+không phụ thuộc hạ tầng, e2e chứng minh **app thật** có nạp module hay không —
+một module đứng sau cờ env và kiểm tra `APP_ROLE` rất dễ âm thầm không đăng ký gì cả.
+
+### Gọi tay vào server đang chạy
+
+```bash
+GRPC_ENABLED=true GRPC_INTERNAL_KEY=$(openssl rand -hex 32) npm run start:dev
+
+# terminal khác — client Node có sẵn, không cần cài gì
+npm run grpc:try                       # đi hết các endpoint, in cả lỗi lẫn kết quả
+npm run grpc:try -- GetOrder DH-001
+npm run grpc:try -- WatchReport 1      # xem stream nhả từng dòng
+```
+
+[scripts/grpc-client.ts](scripts/grpc-client.ts) vừa là công cụ smoke test, vừa là
+ví dụ mẫu cho phía gọi — service khác sẽ viết đúng như vậy.
+
+> Script này nằm ngoài `dist`: [tsconfig.build.json](tsconfig.build.json) loại
+> `scripts` ra khỏi bản build. Nó import `../src/**`, mà chỉ cần một file ngoài
+> `src/` được biên dịch là `rootDir` bị đẩy lên gốc repo, code ra `dist/src/**`
+> trong khi asset (i18n, template mail, `.proto`) vẫn nằm ở `dist/**` — app chết
+> lúc khởi động với lỗi `i18n path ... cannot be found`. Thêm thư mục nào ngoài
+> `src/` cũng phải loại trừ như vậy.
+
+Ai thích `grpcurl` thì `brew install grpcurl` rồi dùng cú pháp ở mục cài đặt phía trên.
 
 ## CI/CD
 
@@ -703,6 +847,7 @@ src/
 ├── auth/           # đăng ký, kích hoạt, đăng nhập, refresh, quên/reset mật khẩu
 ├── common/         # dùng chung: guard RBAC, DTO phân trang, validator, event
 ├── generated/      # Prisma Client (sinh tự động — không sửa tay)
+├── grpc/           # API nội bộ service↔service: proto, controller, guard, filter
 ├── i18n/           # thông báo song ngữ en/vi
 ├── kafka/          # bus sự kiện domain: client, producer, consumer, DLQ
 ├── mail/           # nodemailer + BullMQ + listener theo event
