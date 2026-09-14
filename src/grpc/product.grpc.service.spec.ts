@@ -1,22 +1,20 @@
 import { ProductService } from '../product/product.service';
-import { ProductGrpcController } from './product.grpc.controller';
+import { ProductGrpcService } from './product.grpc.service';
 
 function build() {
   const products = { findOne: jest.fn(), checkStock: jest.fn() };
 
   return {
     products,
-    controller: new ProductGrpcController(
-      products as unknown as ProductService,
-    ),
+    service: new ProductGrpcService(products as unknown as ProductService),
   };
 }
 
-describe('ProductGrpcController', () => {
+describe('ProductGrpcService', () => {
   it('asks for the public view, not the admin one', async () => {
     // An internal service is not an admin: a draft or soft-deleted product is
     // as invisible here as it is to a customer.
-    const { controller, products } = build();
+    const { service, products } = build();
     products.findOne.mockResolvedValue({
       id: 'p-1',
       name: 'Bàn phím',
@@ -25,7 +23,7 @@ describe('ProductGrpcController', () => {
       status: 'ACTIVE',
     });
 
-    const result = await controller.getProduct({ id: 'p-1' });
+    const result = await service.getProduct({ id: 'p-1' });
 
     expect(products.findOne).toHaveBeenCalledWith('p-1', true);
     expect(result).toEqual({
@@ -38,10 +36,10 @@ describe('ProductGrpcController', () => {
   });
 
   it('forwards the requested lines to the service', async () => {
-    const { controller, products } = build();
+    const { service, products } = build();
     products.checkStock.mockResolvedValue({ allAvailable: true, lines: [] });
 
-    await controller.checkStock({
+    await service.checkStock({
       items: [{ productId: 'p-1', quantity: 2 }],
     });
 
@@ -53,10 +51,10 @@ describe('ProductGrpcController', () => {
   it('survives a request that carries no items field at all', async () => {
     // `defaults: true` makes proto-loader hand over [], but a hand-rolled
     // client on the other side is not obliged to send the field.
-    const { controller, products } = build();
+    const { service, products } = build();
     products.checkStock.mockResolvedValue({ allAvailable: false, lines: [] });
 
-    await controller.checkStock({
+    await service.checkStock({
       items: undefined as unknown as [],
     });
 

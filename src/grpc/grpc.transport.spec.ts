@@ -22,8 +22,11 @@ import { JwtService } from '@nestjs/jwt';
 import { JwtStrategy } from '../auth/jwt.strategy';
 import { GrpcInternalGuard } from './grpc-internal.guard';
 import { OrderGrpcController } from './order.grpc.controller';
+import { OrderGrpcService } from './order.grpc.service';
 import { ProductGrpcController } from './product.grpc.controller';
+import { ProductGrpcService } from './product.grpc.service';
 import { ReportGrpcController } from './report.grpc.controller';
+import { ReportGrpcService } from './report.grpc.service';
 import {
   GRPC_INTERNAL_KEY,
   GRPC_LOADER_OPTIONS,
@@ -102,6 +105,9 @@ const reportStates = [
   ],
   providers: [
     GrpcInternalGuard,
+    OrderGrpcService,
+    ProductGrpcService,
+    ReportGrpcService,
     { provide: ConfigService, useValue: { getOrThrow: () => KEY } },
     {
       provide: OrderService,

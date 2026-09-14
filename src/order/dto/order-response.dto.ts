@@ -1,14 +1,34 @@
 import { toNumber } from '../../common/utils/money.util';
 import { Prisma } from '../../generated/prisma/client';
 
+// Explicit, not `items: true` / `payment: true`: `true` means every column of
+// the relation, and `toOrderResponse` reads a third of them. The one that
+// actually matters is `Payment.paymentData` — a Json blob of the gateway's
+// response, read by nothing here and pulled over the wire on every order read.
+const orderItemSelect = {
+  id: true,
+  productId: true,
+  productName: true,
+  productPrice: true,
+  quantity: true,
+  subtotal: true,
+} satisfies Prisma.OrderItemSelect;
+
+const paymentSelect = {
+  status: true,
+  paymentMethod: true,
+  transactionId: true,
+  paidAt: true,
+} satisfies Prisma.PaymentSelect;
+
 export const orderInclude = {
-  items: true,
-  payment: true,
+  items: { select: orderItemSelect },
+  payment: { select: paymentSelect },
 } satisfies Prisma.OrderInclude;
 
 export const adminOrderInclude = {
-  items: true,
-  payment: true,
+  items: { select: orderItemSelect },
+  payment: { select: paymentSelect },
   user: { select: { id: true, name: true, email: true, locale: true } },
 } satisfies Prisma.OrderInclude;
 

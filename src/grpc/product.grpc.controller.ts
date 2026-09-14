@@ -1,8 +1,8 @@
 import { Controller, UseFilters, UseGuards } from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
-import { ProductService } from '../product/product.service';
 import { GrpcExceptionFilter } from './grpc-exception.filter';
 import { GrpcInternalGuard } from './grpc-internal.guard';
+import { ProductGrpcService } from './product.grpc.service';
 import type {
   CheckStockRequest,
   CheckStockResponse,
@@ -14,27 +14,15 @@ import type {
 @UseFilters(GrpcExceptionFilter)
 @Controller()
 export class ProductGrpcController {
-  constructor(private readonly products: ProductService) {}
+  constructor(private readonly products: ProductGrpcService) {}
 
   /**
    * @param request - Product id.
    * @returns The product, as far as an internal caller needs it.
    */
   @GrpcMethod('ProductService', 'GetProduct')
-  async getProduct(request: GetProductRequest): Promise<Product> {
-    // publicOnly: an internal service is not an admin. A draft or soft-deleted
-    // product is invisible here for the same reason it is invisible to a
-    // customer — if a service needs those, that is a separate contract with a
-    // separate guard, not a boolean on this one.
-    const product = await this.products.findOne(request.id, true);
-
-    return {
-      id: product.id,
-      name: product.name,
-      price: product.price.toFixed(2),
-      quantity: product.quantity,
-      status: product.status,
-    };
+  getProduct(request: GetProductRequest): Promise<Product> {
+    return this.products.getProduct(request);
   }
 
   /**
@@ -42,9 +30,7 @@ export class ProductGrpcController {
    * @returns Per-item availability, and whether the whole basket fits.
    */
   @GrpcMethod('ProductService', 'CheckStock')
-  async checkStock(request: CheckStockRequest): Promise<CheckStockResponse> {
-    // `defaults: true` turns an empty repeated field into [], never undefined —
-    // but a caller on a hand-rolled client may still send nothing at all.
-    return this.products.checkStock(request.items ?? []);
+  checkStock(request: CheckStockRequest): Promise<CheckStockResponse> {
+    return this.products.checkStock(request);
   }
 }

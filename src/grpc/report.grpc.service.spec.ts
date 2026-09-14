@@ -2,7 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { ReportService } from '../report/report.service';
 import { ReportJobStatus } from '../report/report.interface';
 import { REPORT_WATCH_POLL_MS, REPORT_WATCH_TIMEOUT_MS } from './grpc.constant';
-import { ReportGrpcController } from './report.grpc.controller';
+import { ReportGrpcService } from './report.grpc.service';
 import type { ReportProgress } from './grpc.interface';
 
 function status(overrides: Partial<ReportJobStatus> = {}): ReportJobStatus {
@@ -18,16 +18,14 @@ function status(overrides: Partial<ReportJobStatus> = {}): ReportJobStatus {
 
 function build() {
   const reports = { status: jest.fn() };
-  const controller = new ReportGrpcController(
-    reports as unknown as ReportService,
-  );
-  jest.spyOn(controller['logger'], 'warn').mockImplementation(() => undefined);
+  const service = new ReportGrpcService(reports as unknown as ReportService);
+  jest.spyOn(service['logger'], 'warn').mockImplementation(() => undefined);
 
-  return { reports, controller };
+  return { reports, service };
 }
 
 /** Subscribes and collects everything the stream produces. */
-function collect(stream: ReturnType<ReportGrpcController['watchReport']>) {
+function collect(stream: ReturnType<ReportGrpcService['watchReport']>) {
   const seen: ReportProgress[] = [];
   let completed = false;
   let failed: unknown;
@@ -50,16 +48,16 @@ function collect(stream: ReturnType<ReportGrpcController['watchReport']>) {
   };
 }
 
-describe('ReportGrpcController.watchReport', () => {
+describe('ReportGrpcService.watchReport', () => {
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());
 
   it('emits the first state without waiting a full poll interval', async () => {
     // A job that already finished should answer immediately, not a second later.
-    const { controller, reports } = build();
+    const { service, reports } = build();
     reports.status.mockResolvedValue(status({ state: 'active' }));
 
-    const run = collect(controller.watchReport({ jobId: '7' }));
+    const run = collect(service.watchReport({ jobId: '7' }));
     await jest.advanceTimersByTimeAsync(0);
 
     expect(run.seen).toHaveLength(1);
@@ -68,10 +66,10 @@ describe('ReportGrpcController.watchReport', () => {
 
   it('sends a message only when something actually changed', async () => {
     // A job sitting at `active` for a minute is one message, not sixty.
-    const { controller, reports } = build();
+    const { service, reports } = build();
     reports.status.mockResolvedValue(status({ state: 'active', progress: 40 }));
 
-    const run = collect(controller.watchReport({ jobId: '7' }));
+    const run = collect(service.watchReport({ jobId: '7' }));
     await jest.advanceTimersByTimeAsync(REPORT_WATCH_POLL_MS * 5);
 
     expect(run.seen).toHaveLength(1);
@@ -79,7 +77,7 @@ describe('ReportGrpcController.watchReport', () => {
   });
 
   it('streams each change and closes when the job completes', async () => {
-    const { controller, reports } = build();
+    const { service, reports } = build();
     reports.status
       .mockResolvedValueOnce(status({ state: 'active', progress: 40 }))
       .mockResolvedValueOnce(status({ state: 'active', progress: 80 }))
@@ -97,7 +95,7 @@ describe('ReportGrpcController.watchReport', () => {
         }),
       );
 
-    const run = collect(controller.watchReport({ jobId: '7' }));
+    const run = collect(service.watchReport({ jobId: '7' }));
     await jest.advanceTimersByTimeAsync(REPORT_WATCH_POLL_MS * 3);
 
     expect(run.seen.map((m) => m.progress)).toEqual([40, 80, 100]);
@@ -106,12 +104,12 @@ describe('ReportGrpcController.watchReport', () => {
   });
 
   it('closes on a failed job too, carrying the reason', async () => {
-    const { controller, reports } = build();
+    const { service, reports } = build();
     reports.status.mockResolvedValue(
       status({ state: 'failed', failedReason: 'S3 refused the upload' }),
     );
 
-    const run = collect(controller.watchReport({ jobId: '7' }));
+    const run = collect(service.watchReport({ jobId: '7' }));
     await jest.advanceTimersByTimeAsync(0);
 
     expect(run.seen[0].failedReason).toBe('S3 refused the upload');
@@ -121,10 +119,10 @@ describe('ReportGrpcController.watchReport', () => {
   it('fills the proto3 defaults in place of nulls', async () => {
     // The message has no null: an unfinished job reports "" and 0, not
     // undefined, or the client reads a field that is not there.
-    const { controller, reports } = build();
+    const { service, reports } = build();
     reports.status.mockResolvedValue(status());
 
-    const run = collect(controller.watchReport({ jobId: '7' }));
+    const run = collect(service.watchReport({ jobId: '7' }));
     await jest.advanceTimersByTimeAsync(0);
 
     expect(run.seen[0]).toEqual({
@@ -140,10 +138,10 @@ describe('ReportGrpcController.watchReport', () => {
   });
 
   it('errors the stream when the job is unknown', async () => {
-    const { controller, reports } = build();
+    const { service, reports } = build();
     reports.status.mockRejectedValue(new NotFoundException('no such job'));
 
-    const run = collect(controller.watchReport({ jobId: 'nope' }));
+    const run = collect(service.watchReport({ jobId: 'nope' }));
     await jest.advanceTimersByTimeAsync(0);
 
     expect(run.failed).toBeInstanceOf(NotFoundException);
@@ -152,10 +150,10 @@ describe('ReportGrpcController.watchReport', () => {
   it('stops polling once the client hangs up', async () => {
     // The one that matters: without teardown a disconnected client leaves an
     // interval hammering Redis for as long as the process lives.
-    const { controller, reports } = build();
+    const { service, reports } = build();
     reports.status.mockResolvedValue(status());
 
-    const run = collect(controller.watchReport({ jobId: '7' }));
+    const run = collect(service.watchReport({ jobId: '7' }));
     await jest.advanceTimersByTimeAsync(0);
     const callsWhileConnected = reports.status.mock.calls.length;
 
@@ -169,10 +167,10 @@ describe('ReportGrpcController.watchReport', () => {
   it('gives up on a job that never settles, without failing the call', async () => {
     // complete(), not error(): everything already sent was true and the job may
     // still finish. The client can call again.
-    const { controller, reports } = build();
+    const { service, reports } = build();
     reports.status.mockResolvedValue(status({ state: 'active' }));
 
-    const run = collect(controller.watchReport({ jobId: '7' }));
+    const run = collect(service.watchReport({ jobId: '7' }));
     await jest.advanceTimersByTimeAsync(REPORT_WATCH_TIMEOUT_MS + 1);
 
     expect(run.completed).toBe(true);

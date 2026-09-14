@@ -1,5 +1,5 @@
 import { OrderService } from '../order/order.service';
-import { OrderGrpcController } from './order.grpc.controller';
+import { OrderGrpcService } from './order.grpc.service';
 
 function orderResponse(overrides: Record<string, unknown> = {}) {
   return {
@@ -40,17 +40,17 @@ function build() {
 
   return {
     orders,
-    controller: new OrderGrpcController(orders as unknown as OrderService),
+    service: new OrderGrpcService(orders as unknown as OrderService),
   };
 }
 
-describe('OrderGrpcController', () => {
+describe('OrderGrpcService', () => {
   describe('GetOrder', () => {
     it('maps the order onto the proto message', async () => {
-      const { controller, orders } = build();
+      const { service, orders } = build();
       orders.findByCode.mockResolvedValue(orderResponse());
 
-      const result = await controller.getOrder({ orderCode: 'DH-001' });
+      const result = await service.getOrder({ orderCode: 'DH-001' });
 
       expect(orders.findByCode).toHaveBeenCalledWith('DH-001');
       expect(result).toEqual({
@@ -83,12 +83,12 @@ describe('OrderGrpcController', () => {
     it('does not put the payment or the reasons on the wire', async () => {
       // The proto promises fewer fields than the HTTP response on purpose;
       // every field in a contract is a field somebody may come to depend on.
-      const { controller, orders } = build();
+      const { service, orders } = build();
       orders.findByCode.mockResolvedValue(
         orderResponse({ cancelReason: 'khách đổi ý' }),
       );
 
-      const result = await controller.getOrder({ orderCode: 'DH-001' });
+      const result = await service.getOrder({ orderCode: 'DH-001' });
 
       expect(result).not.toHaveProperty('cancelReason');
       expect(result).not.toHaveProperty('payment');
@@ -96,12 +96,10 @@ describe('OrderGrpcController', () => {
     });
 
     it('lets a NotFoundException through for the filter to translate', async () => {
-      const { controller, orders } = build();
+      const { service, orders } = build();
       orders.findByCode.mockRejectedValue(new Error('order.NOT_FOUND'));
 
-      await expect(
-        controller.getOrder({ orderCode: 'nope' }),
-      ).rejects.toThrow();
+      await expect(service.getOrder({ orderCode: 'nope' })).rejects.toThrow();
     });
   });
 
@@ -109,13 +107,13 @@ describe('OrderGrpcController', () => {
     it('falls back to page 1 / limit 10 on proto3 zero values', async () => {
       // proto3 has no null: an unset int32 arrives as 0, and asking Prisma for
       // `take: 0` returns nothing at all.
-      const { controller, orders } = build();
+      const { service, orders } = build();
       orders.findAll.mockResolvedValue({
         data: [],
         meta: { total: 0, page: 1, limit: 10, totalPages: 0 },
       });
 
-      await controller.listOrders({
+      await service.listOrders({
         userId: 'u-1',
         status: '',
         page: 0,
@@ -130,13 +128,13 @@ describe('OrderGrpcController', () => {
     });
 
     it('treats an empty status as no filter, not as a status of ""', async () => {
-      const { controller, orders } = build();
+      const { service, orders } = build();
       orders.findAll.mockResolvedValue({
         data: [],
         meta: { total: 0, page: 1, limit: 10, totalPages: 0 },
       });
 
-      await controller.listOrders({
+      await service.listOrders({
         userId: 'u-1',
         status: '',
         page: 2,
@@ -151,13 +149,13 @@ describe('OrderGrpcController', () => {
     });
 
     it('passes a status through and reports the unpaged total', async () => {
-      const { controller, orders } = build();
+      const { service, orders } = build();
       orders.findAll.mockResolvedValue({
         data: [orderResponse()],
         meta: { total: 42, page: 1, limit: 10, totalPages: 5 },
       });
 
-      const result = await controller.listOrders({
+      const result = await service.listOrders({
         userId: 'u-1',
         status: 'CONFIRMED',
         page: 1,

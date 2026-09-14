@@ -611,7 +611,9 @@ tổng tiền — đủ để một service quyết định nó có quan tâm ha
 
 **gRPC là transport, không phải tầng mới.** Mọi handler trong [src/grpc/](src/grpc/)
 gọi thẳng vào đúng service mà HTTP controller đang dùng, và chỉ thêm hai thứ:
-map sang message của proto, và dịch exception sang gRPC status.
+map sang message của proto, và dịch exception sang gRPC status. Phần "thêm hai
+thứ" đó nằm trong các provider `*.grpc.service.ts`; controller chỉ còn khai báo
+rpc, guard và filter — không xử lý logic.
 
 **Chỉ đọc.** Không có `ReserveStock`. Trừ tồn kho nằm trong cùng transaction với
 `tx.order.create`, đưa ra sau một RPC là mất tính nguyên tử và phải làm saga với
@@ -684,7 +686,7 @@ Bốn tầng, từ rẻ tới đắt — ba tầng đầu không cần hạ tầ
 
 | Tầng | File | Cần gì | Bắt được lỗi gì |
 | --- | --- | --- | --- |
-| Unit | `*.grpc.controller.spec.ts`, `grpc-internal.guard.spec.ts`, `grpc-exception.filter.spec.ts` | không | map sai field, guard hớ, status dịch sai |
+| Unit | `*.grpc.service.spec.ts`, `grpc-internal.guard.spec.ts`, `grpc-exception.filter.spec.ts` | không | map sai field, guard hớ, status dịch sai |
 | Hợp đồng | `grpc.contract.spec.ts` | không | `.proto` lệch code, đổi số field, tiền thành `double`, mất `stream` |
 | Transport | `grpc.transport.spec.ts` | không | socket, protobuf, metadata, đóng stream — service là stub |
 | E2E | `test/grpc.e2e-spec.ts` | DB + Redis | `GrpcModule` có thật sự nạp trong `AppModule` không, dữ liệu thật |
@@ -847,7 +849,7 @@ src/
 ├── auth/           # đăng ký, kích hoạt, đăng nhập, refresh, quên/reset mật khẩu
 ├── common/         # dùng chung: guard RBAC, DTO phân trang, validator, event
 ├── generated/      # Prisma Client (sinh tự động — không sửa tay)
-├── grpc/           # API nội bộ service↔service: proto, controller, guard, filter
+├── grpc/           # API nội bộ service↔service: proto, controller, service, guard, filter
 ├── i18n/           # thông báo song ngữ en/vi
 ├── kafka/          # bus sự kiện domain: client, producer, consumer, DLQ
 ├── mail/           # nodemailer + BullMQ + listener theo event
