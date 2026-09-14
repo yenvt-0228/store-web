@@ -15,7 +15,9 @@ import { UserStatus } from '../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AuthUser } from './current-user.decorator';
 
-interface JwtPayload {
+// Exported: the gRPC token-introspection endpoint verifies the same token and
+// hands the payload to the same `validate` below.
+export interface JwtPayload {
   sub: string; // id user (UUID)
   email: string;
   roles: string[];

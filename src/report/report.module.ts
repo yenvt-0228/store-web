@@ -38,6 +38,9 @@ export class ReportModule {
           ? [ReportProcessor, OrderReportSource, XlsxThreadRunner]
           : []),
       ],
+      // Exported for the gRPC WatchReport stream, which follows the same job
+      // through the same service the REST status endpoint uses.
+      exports: [ReportService],
     };
   }
 }

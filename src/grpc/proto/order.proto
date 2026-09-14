@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+// One package for every service in this deployable. Splitting it per service
+// (store.order.v1, store.product.v1) is what you do the day a service moves out
+// on its own; while they share a process it only buys ceremony.
+package store.v1;
+
+// Read side of the order aggregate, for other services.
+//
+// It exists because Kafka is not enough on its own: `order.created` carries the
+// order code, the customer email and the total, which is all a listener needs to
+// decide whether it cares. A shipping service that DOES care then has to ask for
+// the address and the line items, and that question is synchronous.
+//
+// Read-only on purpose. Placing an order stays behind the HTTP API, where it can
+// keep decrementing stock and writing the order in one transaction.
+service OrderService {
+  rpc GetOrder(GetOrderRequest) returns (Order);
+  rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);
+}
+
+message GetOrderRequest {
+  // The business key, not the UUID: it is what travels on the Kafka topic as
+  // the message key, so a listener already has one.
+  string order_code = 1;
+}
+
+message ListOrdersRequest {
+  string user_id = 1;
+  // Empty means "any". proto3 has no null, so an unset string is "".
+  string status = 2;
+  int32 page = 3;
+  int32 limit = 4;
+}
+
+message ListOrdersResponse {
+  repeated Order orders = 1;
+  int32 total = 2;
+}
+
+message Order {
+  string id = 1;
+  string order_code = 2;
+  string status = 3;
+  string payment_status = 4;
+  string payment_method = 5;
+
+  // Money as a decimal STRING, never double. Protobuf has no decimal type, and
+  // a double cannot hold 1234.56 exactly — the cent that goes missing here is
+  // the cent an invoice is later short by. The database column is
+  // Decimal(12,2); this keeps it that way across the wire.
+  string total_amount = 6;
+
+  Shipping shipping = 7;
+  repeated OrderItem items = 8;
+
+  // RFC 3339. Protobuf has google.protobuf.Timestamp, but a string keeps the
+  // payload identical to the JSON the HTTP API already returns.
+  string created_at = 9;
+}
+
+message Shipping {
+  string name = 1;
+  string phone = 2;
+  string address = 3;
+}
+
+message OrderItem {
+  string product_id = 1;
+  string product_name = 2;
+  string product_price = 3;
+  int32 quantity = 4;
+  string subtotal = 5;
+}

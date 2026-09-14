@@ -169,6 +169,34 @@ export class OrderService {
     return toOrderResponse(await this.getOwnedOrder(userId, id));
   }
 
+  /**
+   * Reads one order by its business key, for an internal caller.
+   *
+   * No `userId` and no ownership check, unlike {@link OrderService.findOne}:
+   * the caller here is another service acting on the order itself, not a
+   * customer browsing their own. Whether that service may ask at all is settled
+   * at the transport boundary, by `GrpcInternalGuard`.
+   *
+   * Keyed by `orderCode` rather than the UUID because that is what travels on
+   * the Kafka topic as the message key, so a listener already holds one.
+   *
+   * @param orderCode - Business key of the order.
+   * @returns The order in the same shape the HTTP API returns.
+   * @throws {NotFoundException} When no order carries that code.
+   */
+  async findByCode(orderCode: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { orderCode },
+      include: orderInclude,
+    });
+
+    if (!order) {
+      throw new NotFoundException(this.i18n.t('order.NOT_FOUND'));
+    }
+
+    return toOrderResponse(order);
+  }
+
   async cancel(userId: string, id: string, dto: CancelOrderDto) {
     const order = await this.getOwnedOrder(userId, id);
 

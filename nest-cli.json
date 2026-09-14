@@ -5,9 +5,21 @@
   "compilerOptions": {
     "deleteOutDir": true,
     "assets": [
-      { "include": "i18n/**/*", "watchAssets": true },
-      { "include": "mail/templates/**/*", "watchAssets": true }
+      {
+        "include": "i18n/**/*",
+        "watchAssets": true
+      },
+      {
+        "include": "mail/templates/**/*",
+        "watchAssets": true
+      },
+      {
+        "include": "grpc/proto/**/*",
+        "watchAssets": true
+      }
     ],
-    "plugins": ["@nestjs/swagger"]
+    "plugins": [
+      "@nestjs/swagger"
+    ]
   }
 }

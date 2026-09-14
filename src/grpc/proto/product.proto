@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package store.v1;
+
+// Read side of the catalogue.
+//
+// Note what is NOT here: no ReserveStock, no DecrementStock. Taking stock is
+// part of the same transaction that writes the order, and moving it behind an
+// RPC would break that atomicity — recovering it needs a saga with a
+// compensating release, which is a much bigger change than a read endpoint.
+// Until then this only answers questions.
+service ProductService {
+  rpc GetProduct(GetProductRequest) returns (Product);
+  rpc CheckStock(CheckStockRequest) returns (CheckStockResponse);
+}
+
+message GetProductRequest {
+  string id = 1;
+}
+
+message Product {
+  string id = 1;
+  string name = 2;
+  // Decimal string, same reason as Order.total_amount.
+  string price = 3;
+  int32 quantity = 4;
+  string status = 5;
+}
+
+message CheckStockRequest {
+  repeated StockQuery items = 1;
+}
+
+message StockQuery {
+  string product_id = 1;
+  int32 quantity = 2;
+}
+
+message CheckStockResponse {
+  // Answers the caller's real question in one field, so it does not have to
+  // fold over the lines itself and get the empty case wrong.
+  bool all_available = 1;
+  repeated StockLine lines = 2;
+}
+
+message StockLine {
+  string product_id = 1;
+  int32 requested = 2;
+  int32 available = 3;
+  bool sufficient = 4;
+  // False when the id matched nothing — a deleted product is not the same
+  // thing as a product that is out of stock.
+  bool found = 5;
+}

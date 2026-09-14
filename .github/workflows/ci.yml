@@ -106,6 +106,8 @@ jobs:
           REDIS_HOST=127.0.0.1
           REDIS_PORT=6379
           REDIS_DB=1
+          GRPC_ENABLED=true
+          GRPC_INTERNAL_KEY=e2e-internal-key
           EOF
 
       - name: E2E test
