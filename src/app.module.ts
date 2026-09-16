@@ -30,6 +30,7 @@ import { OrderModule } from './order/order.module';
 import { PaymentModule } from './payment/payment.module';
 import { CommentModule } from './comment/comment.module';
 import { ReviewModule } from './review/review.module';
+import { StatisticsModule } from './statistics/statistics.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { ReviewModule } from './review/review.module';
     PaymentModule,
     CommentModule,
     ReviewModule,
+    StatisticsModule,
     ReportModule.register(),
     TasksModule.register(),
   ],

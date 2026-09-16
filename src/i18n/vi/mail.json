@@ -28,5 +28,12 @@
 
   "ORDER_REJECTED_SUBJECT": "Đơn hàng {orderCode} bị từ chối",
   "ORDER_REJECTED_BODY": "Rất tiếc, đơn hàng <b>{orderCode}</b> đã bị từ chối.",
-  "ORDER_REJECTED_REASON": "<b>Lý do:</b> {reason}"
+  "ORDER_REJECTED_REASON": "<b>Lý do:</b> {reason}",
+
+  "MONTHLY_REVENUE_SUBJECT": "Báo cáo doanh thu tháng {month}/{year}",
+  "MONTHLY_REVENUE_INTRO": "Đây là báo cáo doanh thu tháng <b>{month}/{year}</b>.",
+  "MONTHLY_REVENUE_TOTAL": "Tổng doanh thu: <b>{money}</b>",
+  "MONTHLY_REVENUE_ORDERS": "Đơn hoàn thành: <b>{completed}</b> / tổng <b>{total}</b> đơn. Giá trị trung bình: <b>{average}</b>",
+  "MONTHLY_REVENUE_TOP_TITLE": "Sản phẩm bán chạy nhất tháng:",
+  "MONTHLY_REVENUE_NO_SALES": "Tháng này chưa có đơn nào hoàn thành."
 }

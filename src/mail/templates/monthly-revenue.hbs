@@ -1,0 +1,13 @@
+{{#p}}{{t 'mail.MONTHLY_REVENUE_INTRO' month=month year=year}}{{/p}}
+{{#p}}{{t 'mail.MONTHLY_REVENUE_TOTAL' money=money}}{{/p}}
+{{#p}}{{t 'mail.MONTHLY_REVENUE_ORDERS' completed=completedOrders total=totalOrders average=averageMoney}}{{/p}}
+{{#if topProducts.length}}
+{{#p}}{{t 'mail.MONTHLY_REVENUE_TOP_TITLE'}}{{/p}}
+<ul style="margin: 0 0 14px; padding-left: 20px; font-size: 15px; line-height: 1.6; color: #24292f;">
+{{#each topProducts}}
+  <li>{{this.productName}} — {{this.quantitySold}} × — {{this.money}}</li>
+{{/each}}
+</ul>
+{{else}}
+{{#p}}{{t 'mail.MONTHLY_REVENUE_NO_SALES'}}{{/p}}
+{{/if}}

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import Handlebars from 'handlebars';
 import { I18nService } from 'nestjs-i18n';
 import { Locale, LOCALE_TAGS } from '../common/constants/locale.constant';
+import type { MonthlyRevenueEvent } from '../common/events/report.event';
 import { MailPayload, SHOP_NAME } from './mail.constant';
 
 const TEMPLATE_DIR = join(__dirname, 'templates');
@@ -170,6 +171,41 @@ export class MailRenderer {
       subjectKey: 'mail.ORDER_REJECTED_SUBJECT',
       subjectArgs: { orderCode },
       context: { orderCode, reason },
+    });
+  }
+
+  /*  BÁO CÁO  */
+
+  /**
+   * Báo cáo doanh thu tháng gửi cho admin.
+   *
+   * Tiền được định dạng ở đây chứ không phải trong template: template chỉ biết
+   * ghép chuỗi, còn dấu phân cách hàng nghìn thì phụ thuộc ngôn ngữ của người
+   * nhận.
+   *
+   * @param event - Số liệu tháng, kèm người nhận và ngôn ngữ của họ.
+   * @returns Mail đã dựng xong, sẵn sàng đưa vào hàng đợi.
+   */
+  monthlyRevenue(event: MonthlyRevenueEvent): MailPayload {
+    return this.render('monthly-revenue', {
+      to: event.email,
+      name: event.name,
+      lang: event.locale,
+      subjectKey: 'mail.MONTHLY_REVENUE_SUBJECT',
+      subjectArgs: { month: event.month, year: event.year },
+      context: {
+        month: event.month,
+        year: event.year,
+        money: this.money(event.revenue, event.locale),
+        averageMoney: this.money(event.averageOrderValue, event.locale),
+        completedOrders: event.completedOrders,
+        totalOrders: event.totalOrders,
+        topProducts: event.topProducts.map((product) => ({
+          productName: product.productName,
+          quantitySold: product.quantitySold,
+          money: this.money(product.revenue, event.locale),
+        })),
+      },
     });
   }
 

@@ -1,0 +1,4 @@
+{
+  "INVALID_RANGE": "The date range is not valid",
+  "INVALID_YEARS": "The start year cannot be later than the end year"
+}

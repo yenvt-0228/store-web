@@ -863,7 +863,8 @@ src/
 ├── prisma/         # PrismaService và seed
 ├── redis/          # kết nối Redis (giỏ hàng, hàng đợi)
 ├── review/         # đánh giá sao: chỉ người đã mua, mỗi người một lần
-├── tasks/          # job chạy theo lịch (@Cron): dọn token hết hạn, dọn ảnh
+├── statistics/     # thống kê admin: doanh thu, bán chạy, đơn hàng
+├── tasks/          # job chạy theo lịch (@Cron): dọn token, dọn ảnh, báo cáo doanh thu tháng
 ├── upload/         # nhận file ảnh, validate magic byte, đẩy lên S3/R2
 └── user/           # thông tin cá nhân của user đang đăng nhập
 ```

@@ -28,5 +28,12 @@
 
   "ORDER_REJECTED_SUBJECT": "Order {orderCode} rejected",
   "ORDER_REJECTED_BODY": "Unfortunately, your order <b>{orderCode}</b> has been rejected.",
-  "ORDER_REJECTED_REASON": "<b>Reason:</b> {reason}"
+  "ORDER_REJECTED_REASON": "<b>Reason:</b> {reason}",
+
+  "MONTHLY_REVENUE_SUBJECT": "Revenue report for {month}/{year}",
+  "MONTHLY_REVENUE_INTRO": "Here is the revenue report for <b>{month}/{year}</b>.",
+  "MONTHLY_REVENUE_TOTAL": "Total revenue: <b>{money}</b>",
+  "MONTHLY_REVENUE_ORDERS": "Completed orders: <b>{completed}</b> of <b>{total}</b>. Average order value: <b>{average}</b>",
+  "MONTHLY_REVENUE_TOP_TITLE": "Best sellers this month:",
+  "MONTHLY_REVENUE_NO_SALES": "No order was completed this month."
 }

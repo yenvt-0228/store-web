@@ -8,6 +8,8 @@ import type {
   OrderRejectedEvent,
 } from '../common/events/order.event';
 import { OrderEvent } from '../common/events/order.event';
+import type { MonthlyRevenueEvent } from '../common/events/report.event';
+import { ReportEvent } from '../common/events/report.event';
 
 import type {
   GoogleLinkedEvent,
@@ -105,5 +107,10 @@ export class MailListener {
         event.locale,
       ),
     );
+  }
+
+  @OnEvent(ReportEvent.MONTHLY_REVENUE)
+  async onMonthlyRevenue(event: MonthlyRevenueEvent): Promise<void> {
+    await this.dispatcher.dispatch(this.renderer.monthlyRevenue(event));
   }
 }
