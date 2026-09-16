@@ -1,0 +1,7 @@
+{
+  "NOT_FOUND": "Review not found",
+  "FORBIDDEN": "You are not allowed to touch this review",
+  "NOT_PURCHASED": "You can only review a product you bought and received",
+  "ALREADY_REVIEWED": "You have already reviewed this product",
+  "DELETED": "Review deleted"
+}

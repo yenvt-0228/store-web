@@ -39,6 +39,8 @@ model User {
   refreshTokens           RefreshToken[]
   emailVerificationTokens EmailVerificationToken[]
   passwordResetTokens     PasswordResetToken[]
+  comments                Comment[]
+  reviews                 Review[]
 
   @@map("users")
 }
@@ -196,10 +198,60 @@ model Product {
   deletedAt DateTime? @map("deleted_at")
 
   orderItems OrderItem[]
+  comments   Comment[]
+  reviews    Review[]
 
   @@index([categoryId])
   @@index([status, deletedAt])
   @@map("products")
+}
+
+// Bình luận sản phẩm. CSV chốt "1 cấp": không có parentId, không trả lời lồng
+// nhau — nên đọc một trang bình luận là một query phẳng, không phải đệ quy.
+model Comment {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  productId String  @map("product_id") @db.Uuid
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  userId String @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id])
+
+  content String
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Đúng thứ tự trang bình luận được đọc: lọc theo sản phẩm, mới nhất trước.
+  @@index([productId, deletedAt, createdAt])
+  @@map("comments")
+}
+
+// Đánh giá sản phẩm. Khác Comment ở hai điểm, và cả hai đều nằm ở tầng DB chứ
+// không chỉ ở tầng service: mỗi người chỉ đánh giá một lần, và điểm phải nằm
+// trong 1..5.
+model Review {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  productId String  @map("product_id") @db.Uuid
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  userId String @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id])
+
+  rating  Int
+  content String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Ràng buộc thật, không phải chỉ check trong service: hai request song song
+  // của cùng một người đều đọc thấy "chưa có đánh giá" rồi cùng ghi, và chỉ
+  // unique index ở DB mới chặn được.
+  @@unique([userId, productId])
+  @@index([productId, createdAt])
+  @@map("reviews")
 }
 
 enum ImageEntityType {

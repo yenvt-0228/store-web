@@ -854,13 +854,15 @@ src/
 ├── kafka/          # bus sự kiện domain: client, producer, consumer, DLQ
 ├── mail/           # nodemailer + BullMQ + listener theo event
 ├── cart/           # giỏ hàng — CHỈ nằm trong Redis, không có bảng
-├── category/       # danh mục sản phẩm (admin CRUD)
+├── category/       # danh mục sản phẩm: endpoint khách + admin CRUD
+├── comment/        # bình luận sản phẩm (1 cấp, xoá mềm)
 ├── order/          # đặt hàng, huỷ, máy trạng thái, admin duyệt đơn
 ├── outbox/         # transactional outbox: ghi event trong transaction + relay lên Kafka
 ├── payment/        # COD + cổng thanh toán giả lập
 ├── product/        # sản phẩm: endpoint khách + admin CRUD (xoá mềm)
 ├── prisma/         # PrismaService và seed
 ├── redis/          # kết nối Redis (giỏ hàng, hàng đợi)
+├── review/         # đánh giá sao: chỉ người đã mua, mỗi người một lần
 ├── tasks/          # job chạy theo lịch (@Cron): dọn token hết hạn, dọn ảnh
 ├── upload/         # nhận file ảnh, validate magic byte, đẩy lên S3/R2
 └── user/           # thông tin cá nhân của user đang đăng nhập

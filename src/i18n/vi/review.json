@@ -1,0 +1,7 @@
+{
+  "NOT_FOUND": "Không tìm thấy đánh giá",
+  "FORBIDDEN": "Bạn không có quyền với đánh giá này",
+  "NOT_PURCHASED": "Bạn chỉ đánh giá được sản phẩm đã mua và nhận hàng",
+  "ALREADY_REVIEWED": "Bạn đã đánh giá sản phẩm này rồi",
+  "DELETED": "Đã xoá đánh giá"
+}
