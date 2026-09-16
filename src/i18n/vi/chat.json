@@ -1,0 +1,7 @@
+{
+  "CONVERSATION_NOT_FOUND": "Không tìm thấy hội thoại",
+  "CONVERSATION_REQUIRED": "Cần chỉ rõ hội thoại",
+  "MESSAGE_NOT_FOUND": "Không tìm thấy tin nhắn",
+  "FORBIDDEN": "Bạn không có quyền với hội thoại này",
+  "CANNOT_READ_OWN": "Không thể đánh dấu đã đọc tin nhắn của chính mình"
+}

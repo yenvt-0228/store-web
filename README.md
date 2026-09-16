@@ -854,6 +854,7 @@ src/
 ├── kafka/          # bus sự kiện domain: client, producer, consumer, DLQ
 ├── mail/           # nodemailer + BullMQ + listener theo event
 ├── cart/           # giỏ hàng — CHỈ nằm trong Redis, không có bảng
+├── chat/           # chat khách↔admin: REST để ghi, WebSocket để đẩy
 ├── category/       # danh mục sản phẩm: endpoint khách + admin CRUD
 ├── comment/        # bình luận sản phẩm (1 cấp, xoá mềm)
 ├── order/          # đặt hàng, huỷ, máy trạng thái, admin duyệt đơn

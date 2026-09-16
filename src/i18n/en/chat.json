@@ -1,0 +1,7 @@
+{
+  "CONVERSATION_NOT_FOUND": "Conversation not found",
+  "CONVERSATION_REQUIRED": "A conversation must be specified",
+  "MESSAGE_NOT_FOUND": "Message not found",
+  "FORBIDDEN": "You are not allowed to access this conversation",
+  "CANNOT_READ_OWN": "You cannot mark your own message as read"
+}

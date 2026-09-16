@@ -9,6 +9,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import { ValidationExceptionFilter } from './common/filters/validation-exception.filter';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
+import { RedisIoAdapter } from './chat/redis-io.adapter';
 import { AppRole, resolveAppRole } from './common/app-role';
 import {
   GRPC_DEFAULT_URL,
@@ -73,6 +74,14 @@ async function bootstrap() {
   SwaggerModule.setup('docs', app, document); // documentation served at /docs
 
   const configService = app.get(ConfigService);
+
+  // socket.io giữ danh sách phòng trong bộ nhớ của từng process, nên hai replica
+  // là hai thế giới tách rời: khách nối vào replica này, admin nối vào replica
+  // kia, không ai thấy tin của ai. Adapter Redis nối chúng lại qua pub/sub.
+  const ioAdapter = await RedisIoAdapter.create(app);
+  if (ioAdapter) {
+    app.useWebSocketAdapter(ioAdapter);
+  }
 
   // A hybrid application: one process, two transports. HTTP keeps serving the
   // browser — gRPC cannot reach one — while the gRPC port answers other

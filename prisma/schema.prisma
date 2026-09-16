@@ -43,6 +43,8 @@ model User {
   reviews                 Review[]
   productSuggestions      ProductSuggestion[]
   reviewedSuggestions     ProductSuggestion[]      @relation("SuggestionReviewer")
+  conversation            Conversation?
+  messages                Message[]
 
   @@map("users")
 }
@@ -292,6 +294,55 @@ model ProductSuggestion {
   @@index([userId, createdAt])
   @@index([status, createdAt])
   @@map("product_suggestions")
+}
+
+// Một cuộc trò chuyện giữa MỘT khách và đội admin.
+//
+// `userId` là unique, tức mỗi khách chỉ có một cuộc trò chuyện chạy dài, không
+// phải mỗi lần nhắn là một ticket mới. Đặc tả gọi đây là "chat với admin" —
+// một kênh liên lạc, và đội admin là một phía chứ không phải từng người một.
+// Cần chia theo ticket thì đó là một tính năng khác, có vòng đời riêng.
+model Conversation {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  userId String @unique @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id])
+
+  // Nhân bản thời điểm tin nhắn cuối để xếp danh sách hội thoại mà không phải
+  // join sang messages rồi gộp — đây là truy vấn admin chạy nhiều nhất.
+  lastMessageAt DateTime? @map("last_message_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  messages Message[]
+
+  @@index([lastMessageAt])
+  @@map("conversations")
+}
+
+model Message {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  conversationId String       @map("conversation_id") @db.Uuid
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  // Ai gửi. Vai trò suy ra bằng cách so với `conversation.userId` thay vì lưu
+  // thêm một cột: một cột nữa là một cột nữa có thể lệch với sự thật.
+  senderId String @map("sender_id") @db.Uuid
+  sender   User   @relation(fields: [senderId], references: [id])
+
+  content String
+
+  readAt DateTime? @map("read_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Đọc một trang tin nhắn: lọc theo hội thoại, mới nhất trước.
+  @@index([conversationId, createdAt])
+  // Đếm tin chưa đọc mà không quét cả bảng.
+  @@index([conversationId, readAt])
+  @@map("messages")
 }
 
 enum ImageEntityType {
