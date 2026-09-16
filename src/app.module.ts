@@ -30,6 +30,7 @@ import { OrderModule } from './order/order.module';
 import { PaymentModule } from './payment/payment.module';
 import { CommentModule } from './comment/comment.module';
 import { ReviewModule } from './review/review.module';
+import { ProductSuggestionModule } from './product-suggestion/product-suggestion.module';
 import { StatisticsModule } from './statistics/statistics.module';
 
 @Module({
@@ -69,6 +70,7 @@ import { StatisticsModule } from './statistics/statistics.module';
     CommentModule,
     ReviewModule,
     StatisticsModule,
+    ProductSuggestionModule,
     ReportModule.register(),
     TasksModule.register(),
   ],

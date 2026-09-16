@@ -41,6 +41,8 @@ model User {
   passwordResetTokens     PasswordResetToken[]
   comments                Comment[]
   reviews                 Review[]
+  productSuggestions      ProductSuggestion[]
+  reviewedSuggestions     ProductSuggestion[]      @relation("SuggestionReviewer")
 
   @@map("users")
 }
@@ -252,6 +254,44 @@ model Review {
   @@unique([userId, productId])
   @@index([productId, createdAt])
   @@map("reviews")
+}
+
+// Vòng đời một yêu cầu gợi ý sản phẩm từ phía khách.
+enum SuggestionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("suggestion_status")
+}
+
+// Khách đề xuất một mặt hàng muốn cửa hàng nhập về.
+model ProductSuggestion {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id])
+
+  name         String  @db.VarChar(255)
+  description  String?
+  referenceUrl String? @map("reference_url") @db.VarChar(500)
+
+  status SuggestionStatus @default(PENDING)
+
+  // Ghi chú admin để lại khi duyệt hoặc từ chối, và ai đã xử lý. reviewedBy
+  // KHÔNG cascade khi xoá user: mất dấu ai duyệt là mất dấu vết kiểm toán.
+  note       String?
+  reviewedBy String?   @map("reviewed_by") @db.Uuid
+  reviewer   User?     @relation("SuggestionReviewer", fields: [reviewedBy], references: [id])
+  reviewedAt DateTime? @map("reviewed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Hai đường đọc: khách xem yêu cầu của mình, admin lọc theo trạng thái.
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("product_suggestions")
 }
 
 enum ImageEntityType {

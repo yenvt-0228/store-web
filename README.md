@@ -859,7 +859,8 @@ src/
 ├── order/          # đặt hàng, huỷ, máy trạng thái, admin duyệt đơn
 ├── outbox/         # transactional outbox: ghi event trong transaction + relay lên Kafka
 ├── payment/        # COD + cổng thanh toán giả lập
-├── product/        # sản phẩm: endpoint khách + admin CRUD (xoá mềm)
+├── product/        # sản phẩm: endpoint khách + admin CRUD (xoá mềm), chia sẻ MXH
+├── product-suggestion/ # khách đề xuất mặt hàng, admin duyệt
 ├── prisma/         # PrismaService và seed
 ├── redis/          # kết nối Redis (giỏ hàng, hàng đợi)
 ├── review/         # đánh giá sao: chỉ người đã mua, mỗi người một lần
