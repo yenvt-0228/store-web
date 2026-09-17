@@ -2,6 +2,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { DynamicModule, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { RedisOptions } from 'bullmq';
+import { registerOnce } from '../common/utils/dynamic-module.util';
 
 export function mailQueueEnabled(): boolean {
   return process.env.MAIL_QUEUE_ENABLED === 'true';
@@ -47,7 +48,7 @@ export function redisConnection(config: ConfigService): RedisOptions {
 // module opens a connection of its own any more.
 @Module({})
 export class QueueModule {
-  static register(): DynamicModule {
+  static readonly register = registerOnce((): DynamicModule => {
     if (!anyQueueEnabled()) {
       return { module: QueueModule };
     }
@@ -67,5 +68,5 @@ export class QueueModule {
         }),
       ],
     };
-  }
+  });
 }

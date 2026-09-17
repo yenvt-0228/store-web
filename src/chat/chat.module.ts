@@ -1,6 +1,7 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { AppRole, resolveAppRole } from '../common/app-role';
+import { registerOnce } from '../common/utils/dynamic-module.util';
 import { ChatController } from './chat.controller';
 import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
@@ -15,7 +16,7 @@ import { WsAuthService } from './ws-auth.service';
  */
 @Module({})
 export class ChatModule {
-  static register(): DynamicModule {
+  static readonly register = registerOnce((): DynamicModule => {
     if (resolveAppRole() === AppRole.WORKER) {
       return { module: ChatModule };
     }
@@ -27,5 +28,5 @@ export class ChatModule {
       providers: [ChatService, ChatGateway, WsAuthService],
       exports: [ChatService],
     };
-  }
+  });
 }

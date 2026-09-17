@@ -1,6 +1,7 @@
 import { BullModule } from '@nestjs/bullmq';
 import { DynamicModule, Module } from '@nestjs/common';
 import { runsBackgroundJobs } from '../common/app-role';
+import { registerOnce } from '../common/utils/dynamic-module.util';
 import { mailQueueEnabled } from '../queue/queue.module';
 import { MAIL_QUEUE } from './mail.constant';
 import { MailDispatcher } from './mail.dispatcher';
@@ -11,7 +12,7 @@ import { MailService } from './mail.service';
 
 @Module({})
 export class MailModule {
-  static register(): DynamicModule {
+  static readonly register = registerOnce((): DynamicModule => {
     const queueEnabled = mailQueueEnabled();
 
     // When the queue is on every process needs the Queue to PUSH jobs
@@ -34,5 +35,5 @@ export class MailModule {
       ],
       exports: [MailDispatcher],
     };
-  }
+  });
 }

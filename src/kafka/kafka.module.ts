@@ -1,5 +1,6 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { runsBackgroundJobs } from '../common/app-role';
+import { registerOnce } from '../common/utils/dynamic-module.util';
 import { OutboxRelay } from '../outbox/outbox.relay';
 import { KafkaConsumer } from './kafka.consumer';
 import { kafkaEnabled } from './kafka.constant';
@@ -17,7 +18,7 @@ export { kafkaEnabled };
  */
 @Module({})
 export class KafkaModule {
-  static register(): DynamicModule {
+  static readonly register = registerOnce((): DynamicModule => {
     if (!kafkaEnabled()) {
       return { module: KafkaModule };
     }
@@ -37,5 +38,5 @@ export class KafkaModule {
       providers: [KafkaService, KafkaProducer, OutboxRelay, KafkaConsumer],
       exports: [KafkaProducer],
     };
-  }
+  });
 }

@@ -1,6 +1,7 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { AppRole, resolveAppRole } from '../common/app-role';
+import { registerOnce } from '../common/utils/dynamic-module.util';
 import { OrderModule } from '../order/order.module';
 import { ProductModule } from '../product/product.module';
 import { ReportModule } from '../report/report.module';
@@ -32,7 +33,7 @@ export { grpcEnabled };
  */
 @Module({})
 export class GrpcModule {
-  static register(): DynamicModule {
+  static readonly register = registerOnce((): DynamicModule => {
     // The worker process runs `createApplicationContext`, so a controller here
     // would be built and never reachable.
     if (!grpcEnabled() || resolveAppRole() === AppRole.WORKER) {
@@ -60,5 +61,5 @@ export class GrpcModule {
         ReportGrpcService,
       ],
     };
-  }
+  });
 }

@@ -404,6 +404,23 @@ docker run -e APP_ROLE=worker -e RUN_MIGRATIONS=false <image> node dist/main.wor
 `RUN_MIGRATIONS=false` cho worker là bắt buộc: để `true` thì API và worker cùng chạy
 `prisma migrate deploy` lúc deploy và tranh nhau advisory lock của Prisma.
 
+#### Vì sao mọi `register()` đều đi qua `registerOnce`
+
+Nest định danh module **động** theo *tham chiếu object*, không theo nội dung metadata:
+`ByReferenceModuleOpaqueKeyFactory` (mặc định từ Nest 11) đóng một id ngẫu nhiên lên
+chính object rồi nhớ id đó trên object. Nên hai lời gọi `register()` trả về hai object
+khác nhau sẽ thành **hai module khác nhau**, dù metadata giống hệt từng chữ — và mọi
+controller, provider, processor bên trong bị dựng hai bản.
+
+Chuyện này đã xảy ra thật: `ReportModule` được import ở cả `AppModule` lẫn `GrpcModule`
+(cho rpc `WatchReport`), và với `APP_ROLE=all` thì có **hai** `ReportProcessor` cùng rút
+việc từ một hàng đợi trong cùng một process. Lỗi im lặng — route thừa thì lần khớp đầu
+thắng, còn processor thừa không báo gì cả.
+
+Vì vậy mọi module động đều khai qua
+[`registerOnce`](src/common/utils/dynamic-module.util.ts), và
+[app.module.spec.ts](src/app.module.spec.ts) canh bằng `toBe` để lỗi không quay lại.
+
 ### Worker thread cho job ngốn CPU
 
 Việc nền thuần I/O (SMTP, SQL, gọi S3) **không cần** worker thread: async là đủ. Native
